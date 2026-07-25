@@ -35,7 +35,7 @@ import {
   pilotOrganizations as pilotOrganizationsTable,
   pilotApplications as pilotApplicationsTable
 } from './src/db/schema.ts';
-import { eq, and, inArray, desc } from 'drizzle-orm';
+import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import { requireAuth, rateLimiter, requireRole, AuthenticatedRequest } from './src/middleware/security.ts';
 import {
   validateBody,
@@ -56,6 +56,7 @@ import {
 import { setUserCustomClaims } from './src/lib/firebase-admin.ts';
 import { offboardTenantData } from './src/db/sync.ts';
 import { runComprehensiveScan, calculateAndStoreTrustScore, addPostgresAuditLog } from './src/utils/scanner.ts';
+import { probeDatabase } from './src/utils/health.ts';
 
 // Load environment variables
 dotenv.config();
@@ -137,7 +138,7 @@ function getStripe(): Stripe | null {
   }
   // Standard publishable keys (starting with pk_) cannot be used on the server.
   if (stripeKey.startsWith('pk_')) {
-    console.warn('[Stripe] STRIPE_SECRET_KEY starts with "pk_". This is a publishable API key, but a secret API key (sk_...) is required for server-side calls. Falling back to Simulated Sandbox Mode.');
+    console.warn('[Stripe] Server billing is unavailable because STRIPE_SECRET_KEY is not a secret API key.');
     return null;
   }
   if (!stripeClient) {
@@ -231,10 +232,10 @@ async function startServer() {
     const evidence = [
       {
         id: 'ev-build-001',
-        name: 'Build Artifact Hash Validation',
+        name: 'Build Artifact Integrity Digest',
         type: 'Build Log',
-        status: 'VERIFIED',
-        signer: 'SPR Self Verifier',
+        status: 'OBSERVED',
+        signer: '',
         timestamp: new Date().toISOString(),
         hash: realBuildHash,
         checksum: realBuildHash,
@@ -242,19 +243,19 @@ async function startServer() {
           { step: 'built', actor: 'SPR CI', timestamp: new Date().toISOString() },
           { step: 'hashed', actor: 'SPR Self Monitor', timestamp: new Date().toISOString() }
         ],
-        verifierEngineId: 'spr-self-monitor',
-        verifiedAt: new Date().toISOString()
+        verifierEngineId: '',
+        verifiedAt: undefined
       },
       {
         id: 'ev-dep-001',
-        name: 'Dependency Consistency Check',
+        name: 'Dependency Manifest Digest',
         type: 'Security Scan',
-        status: 'VERIFIED',
-        signer: 'SPR Dependency Auditor',
+        status: 'OBSERVED',
+        signer: '',
         timestamp: new Date().toISOString(),
         hash: crypto.createHash('sha256').update(JSON.stringify(sbomComponents)).digest('hex'),
-        verifierEngineId: 'spr-dependency-audit',
-        verifiedAt: new Date().toISOString()
+        verifierEngineId: '',
+        verifiedAt: undefined
       }
     ];
 
@@ -262,7 +263,7 @@ async function startServer() {
       licenseType: packageJson.license || 'MIT',
       fileHash: realBuildHash,
       publisher: 'Software Passport Registry (SPR)',
-      isPublisherVerified: true,
+      isPublisherVerified: false,
       sbom: sbomComponents,
       vulnerabilities: osvResults,
       evidence
@@ -285,7 +286,7 @@ async function startServer() {
       releaseDate: new Date().toISOString().split('T')[0],
       fileHash: realBuildHash,
       licenseType: packageJson.license || 'MIT',
-      aiSummary: `Self-verification generated from real project build hash, SBOM, and dependency analysis.`,
+      aiSummary: `Local integrity digest and dependency inventory generated. Publisher identity and artifact provenance were not independently verified.`,
       sbom: sbomComponents,
       evidence,
       vulnerabilities: osvResults,
@@ -293,13 +294,13 @@ async function startServer() {
         {
           date: new Date().toISOString().split('T')[0],
           event: 'Self Passport Generated',
-          user: 'SPR Self Verification Engine',
+          user: 'SPR Local Inventory',
           details: `Generated from package.json version ${packageJson.version || 'unknown'} and ${sbomComponents.length} SBOM components.`
         },
         {
           date: new Date().toISOString().split('T')[0],
-          event: 'Self Passport Updated',
-          user: 'SPR Continuous Monitor',
+          event: 'Local Inventory Updated',
+          user: 'SPR Local Inventory',
           details: `Triggered by ${reason}. Changed files: ${changedFiles.join(', ') || 'none'}`
         }
       ],
@@ -309,7 +310,7 @@ async function startServer() {
         devDependencies: Object.keys(packageJson.devDependencies || {}),
         buildArtifact: fs.existsSync(path.resolve(process.cwd(), 'dist', 'server.cjs')) ? 'dist/server.cjs' : 'source'
       },
-      healthStatus: computedScores.overallScore >= 80 ? 'Healthy' : 'Needs Review'
+      healthStatus: 'Unknown'
     };
 
     selfPassportCache = {
@@ -621,11 +622,24 @@ async function startServer() {
     });
   });
 
-  app.get('/api/health', (_req, res) => {
-    res.status(200).json({
-      status: 'ok',
+  app.get('/api/health', async (_req, res) => {
+    const configured = Boolean(
+      process.env.SQL_HOST &&
+      process.env.SQL_USER &&
+      process.env.SQL_PASSWORD &&
+      process.env.SQL_DB_NAME
+    );
+    const database = await probeDatabase(
+      () => db.execute(sql`SELECT 1`),
+      configured,
+      2_000
+    );
+    const available = database.db === 'connected';
+    res.status(available ? 200 : 503).json({
+      status: available ? 'ok' : 'unavailable',
       service: 'SPR',
-      db: !!db ? 'connected' : 'unavailable',
+      db: database.db,
+      code: database.code,
       environment: process.env.NODE_ENV || 'development',
       timestamp: new Date().toISOString()
     });
@@ -899,16 +913,6 @@ async function startServer() {
     const vulns = Array.isArray(data.vulnerabilities) ? data.vulnerabilities : [];
     const evidence = Array.isArray(data.evidence) ? data.evidence : [];
 
-    let securityScore = 100;
-    vulns.forEach((v) => {
-      const sev = String(v.severity || v.riskLevel || '').toLowerCase();
-      if (sev.includes('critical')) securityScore -= 25;
-      else if (sev.includes('high')) securityScore -= 15;
-      else if (sev.includes('medium') || sev.includes('moderate')) securityScore -= 10;
-      else securityScore -= 5;
-    });
-    securityScore = Math.max(10, Math.min(100, securityScore));
-
     // Only count evidence items backed by programmatic/automated verification receipts or cryptographic signatures
     const ALLOWED_VERIFIED_STATUSES = [
       'verified-automated-license-check',
@@ -925,18 +929,31 @@ async function startServer() {
       return ALLOWED_VERIFIED_STATUSES.includes(statusStr) || (statusStr === 'verified' && hasReceiptOrSignature);
     }).length;
 
-    let complianceScore = 75 + verifiedEvidence * 5;
-    const license = String(data.licenseType || '').toUpperCase();
-    if (['MIT', 'APACHE-2.0', 'BSD-3-CLAUSE', 'BSD-2-CLAUSE', 'ISC', 'APACHE 2.0'].includes(license)) {
-      complianceScore += 10;
+    const hasVerifiedSecurityScan = evidence.some((e) => {
+      const type = String(e.type || '').toLowerCase();
+      const status = String(e.status || '').toLowerCase();
+      return type.includes('security scan') &&
+        (ALLOWED_VERIFIED_STATUSES.includes(status) || status === 'verified');
+    });
+    let securityScore = 0;
+    if (hasVerifiedSecurityScan) {
+      securityScore = 100;
+      vulns.forEach((v) => {
+        const sev = String(v.severity || v.riskLevel || '').toLowerCase();
+        if (sev.includes('critical')) securityScore -= 25;
+        else if (sev.includes('high')) securityScore -= 15;
+        else if (sev.includes('medium') || sev.includes('moderate')) securityScore -= 10;
+        else securityScore -= 5;
+      });
+      securityScore = Math.max(0, Math.min(100, securityScore));
     }
-    complianceScore = Math.max(50, Math.min(100, complianceScore));
 
-    let vendorReputationScore = 40;
+    const complianceScore = Math.min(100, verifiedEvidence * 20);
+    let vendorReputationScore = 0;
     
     // Real publisher verification: require explicit verification flag or known registered identity (+30 points)
     if (data.isPublisherVerified === true) {
-      vendorReputationScore += 30;
+      vendorReputationScore = 100;
     }
 
     // Strict SHA-256 hash format validation: must be exactly 64 hex characters AND NOT an empty-string hash (+30 points)
@@ -948,17 +965,9 @@ async function startServer() {
     const isEmptyHash = trimmedHash === EMPTY_INPUT_SHA256 || trimmedHash === EMPTY_INPUT_MD5;
     const isValidSha256 = isWellFormedHex && !isEmptyHash;
     
-    if (isValidSha256) {
-      vendorReputationScore += 30;
-    } else if (isEmptyHash) {
-      // Penalty for supplying a zero-byte empty input hash constant
-      vendorReputationScore -= 20;
-    } else if (trimmedHash.length > 0) {
-      // Penalty for providing malformed non-SHA-256 hash string
-      vendorReputationScore -= 15;
-    }
-
-    vendorReputationScore = Math.max(20, Math.min(100, vendorReputationScore));
+    // A digest proves integrity of bytes only; it does not establish publisher reputation.
+    void isValidSha256;
+    vendorReputationScore = Math.max(0, Math.min(100, vendorReputationScore));
 
     const overallScore = Math.round(
       securityScore * 0.4 + complianceScore * 0.35 + vendorReputationScore * 0.25
@@ -1083,6 +1092,9 @@ async function startServer() {
       const workspaceUuid = crypto.randomUUID();
       const newTenantId = `tenant-${workspaceUuid}`;
 
+      const previousUser = await db.select().from(usersTable)
+        .where(eq(usersTable.uid, req.user!.uid))
+        .then(rows => rows[0]);
       const updated = await db.update(usersTable)
         .set({
           companyName,
@@ -1103,6 +1115,20 @@ async function startServer() {
         role: 'Owner'
       });
       if (!claimResult.success) {
+        if (previousUser) {
+          await db.update(usersTable)
+            .set({
+              companyName: previousUser.companyName,
+              roleTitle: previousUser.roleTitle,
+              role: previousUser.role,
+              numTechnicians: previousUser.numTechnicians,
+              clientCount: previousUser.clientCount,
+              primaryUseCase: previousUser.primaryUseCase,
+              tenantId: previousUser.tenantId,
+              onboarded: previousUser.onboarded
+            })
+            .where(eq(usersTable.uid, req.user!.uid));
+        }
         console.error(`[RBAC Failure] Failed to set custom claims on onboarding for ${req.user!.uid}: ${claimResult.reason}`);
         return res.status(500).json({ error: `Security failure: Unable to apply workspace permissions (${claimResult.reason})` });
       }
@@ -1213,6 +1239,9 @@ async function startServer() {
           role
         });
         if (!claimResult.success) {
+          await db.update(usersTable)
+            .set({ role: targetUser.role })
+            .where(eq(usersTable.id, parseInt(userId)));
           console.error(`[RBAC Failure] Failed to update custom claims for ${targetUser.uid}: ${claimResult.reason}`);
           return res.status(500).json({ error: `Security failure: Unable to update custom claims for user role change (${claimResult.reason})` });
         }
@@ -1418,8 +1447,8 @@ async function startServer() {
           name,
           domain,
           industry: industry || 'Technology',
-          trustScore: 100,
-          riskLevel: 'Safe',
+          trustScore: 0,
+          riskLevel: 'Unknown',
           avatarColor: 'indigo',
           subscriptionTier: subscriptionTier || 'Standard',
           joinedDate,
@@ -1714,13 +1743,12 @@ async function startServer() {
           })
         );
 
-        const isCompliant = hasScans && !hasUnresolvedCriticalAlert;
-        const status = isCompliant ? 'Compliant' : (hasUnresolvedCriticalAlert ? 'Attention Required' : 'In Progress');
+        const status = hasUnresolvedCriticalAlert ? 'Attention Required' : 'In Progress';
         
         // Update progress of the framework dynamically based on open vs resolved alerts for this client
-        const progress = isCompliant ? 100 : (hasUnresolvedCriticalAlert ? 65 : 85);
+        const progress = 0;
         const totalControls = comp.totalControls || 10;
-        const compliantControls = Math.round((progress / 100) * totalControls);
+        const compliantControls = 0;
 
         return {
           ...comp,
@@ -2109,13 +2137,8 @@ async function startServer() {
         details: `Software Passport for ${name} v${version} registered under secure multi-tenant MSP ledger.`
       }];
 
-      // Check publisher against registered clients in the tenant database
-      const tenantClients = await db.select().from(clientsTable).where(eq(clientsTable.tenantId, tenantId));
-      const userRecord = await db.select().from(usersTable).where(eq(usersTable.uid, req.user!.uid)).limit(1);
-      const userCompanyName = userRecord[0]?.companyName;
-      const isPublisherVerified = tenantClients.some(
-        (c) => c.name.toLowerCase().trim() === publisher.toLowerCase().trim()
-      ) || Boolean(userCompanyName && userCompanyName.toLowerCase().trim() === publisher.toLowerCase().trim());
+      // Registration or a matching name does not verify publisher identity.
+      const isPublisherVerified = false;
 
       // Calculate initial real scores based on passport parameters
       const initialSbom: any[] = [];
@@ -2146,7 +2169,7 @@ async function startServer() {
           releaseDate,
           fileHash,
           licenseType: licenseType || 'MIT',
-          aiSummary: `Initial registration completed. Provisional trust scores generated; evidence-based verification is pending.`,
+          aiSummary: `Registration recorded. No trust assessment has been completed; evidence-based verification is pending.`,
           sbom: JSON.stringify(initialSbom),
           evidence: JSON.stringify(initialEvidence),
           vulnerabilities: JSON.stringify(initialVulns),

@@ -490,9 +490,13 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(processedScan)
     })
-      .then(res => res.ok ? res.json() : null)
+      .then(res => {
+        if (!res.ok) throw new Error(`Scan record was not persisted (${res.status})`);
+        return res.json();
+      })
       .then(savedScan => {
-        const finalScan = (savedScan && savedScan.id) ? savedScan : processedScan;
+        if (!savedScan?.id) throw new Error('Scan API returned no committed record');
+        const finalScan = savedScan;
         setScans(prev => [finalScan, ...prev]);
         triggerNotification(
           isCustom 
@@ -501,28 +505,10 @@ export default function App() {
           'success'
         );
 
-        // Auto-onboard into dynamic assets list
-        const hostClean = finalScan.targetName.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'custom-node';
-        const assetExists = assets.some(a => a.hostName === `${hostClean}.node.internal` || a.activePassport === finalScan.targetName);
-        if (!assetExists) {
-          const newAsset = {
-            id: `as-dynamic-${Date.now()}`,
-            hostName: `${hostClean}.node.internal`,
-            type: isCustom ? 'Custom Node' : (matched ? matched.type : 'Virtual Machine'),
-            clientName: finalScan.clientName,
-            environment: 'Production',
-            OS: isCustom ? 'Generic OS (Unclassified)' : (matched ? matched.defaultOS : 'Ubuntu 22.04'),
-            activePassport: isCustom ? `Custom/Generic: ${finalScan.targetName}` : (matched ? matched.category : finalScan.targetName),
-            health: 'Compliant'
-          };
-          setAssets(prev => [newAsset, ...prev]);
-        }
       })
       .catch(err => {
         console.error('Failed to save scan record to backend:', err);
-        // Fallback local append
-        setScans(prev => [processedScan, ...prev]);
-        triggerNotification(`Local log appended: ${processedScan.targetName}`, 'info');
+        triggerNotification(`Scan record was not saved: ${processedScan.targetName}`, 'info');
       });
   };
 
@@ -579,37 +565,7 @@ export default function App() {
       })
       .catch(err => {
         console.error('Failed to batch-tag scans on backend:', err);
-        // Local state fallback update in case of network issues
-        setScans(prev => prev.map(s => {
-          if (scanIds.includes(s.id)) {
-            return { ...s, scanType: customCategory as Scan['scanType'] };
-          }
-          return s;
-        }));
-        
-        setAssets(prev => prev.map(a => {
-          const matchingScan = scans.find(s => {
-            if (!scanIds.includes(s.id)) return false;
-            const targetClean = s.targetName.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'custom-node';
-            return (
-              a.hostName === `${targetClean}.node.internal` ||
-              a.activePassport === `Custom/Generic: ${s.targetName}` ||
-              a.activePassport === s.targetName ||
-              (a.clientName === s.clientName && a.activePassport?.toLowerCase().includes(s.targetName.toLowerCase()))
-            );
-          });
-
-          if (matchingScan) {
-            return {
-              ...a,
-              activePassport: customCategory,
-              type: 'Categorized Node'
-            };
-          }
-          return a;
-        }));
-        
-        triggerNotification(`Local batch tag fallback applied for ${scanIds.length} records.`, 'info');
+        triggerNotification(`Batch tag was not saved for ${scanIds.length} records.`, 'info');
       });
   };
 
@@ -633,7 +589,7 @@ export default function App() {
   };
 
   // Workspace actions: Register New Client
-  const handleOnboardClient = (e: React.FormEvent) => {
+  const handleOnboardClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClientName || !newClientDomain) return;
 
@@ -642,36 +598,38 @@ export default function App() {
       name: newClientName,
       domain: newClientDomain,
       industry: newClientIndustry,
-      trustScore: 92,
-      riskLevel: 'Safe',
+      trustScore: 0,
+      riskLevel: 'Unknown',
       avatarColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
       subscriptionTier: newClientTier,
       joinedDate: new Date().toISOString().substring(0, 10),
       teamCount: 1,
       passportCount: 0,
       criticalRisksCount: 0,
-      complianceProgress: 80,
+      complianceProgress: 0,
       softwareInventory: [],
-      complianceStatus: [
-        { id: `comp-new-1-${Date.now()}`, name: 'SOC 2 Type II Auditing', code: 'SOC2', progress: 80, compliantControls: 32, totalControls: 40, status: 'In Progress' }
-      ],
-      teamMembers: [
-        { name: 'Onboarding Agent', role: 'Tenant Administrator', email: `admin@${newClientDomain}`, avatar: 'OA' }
-      ],
-      activityTimeline: [
-        { id: `act-new-${Date.now()}`, timestamp: new Date().toISOString(), eventType: 'Client Onboarded', description: 'Tenant client successfully provisioned on SPR platform.', user: 'Audit Director', severity: 'Info' }
-      ]
+      complianceStatus: [],
+      teamMembers: [],
+      activityTimeline: []
     };
 
-    apiFetch('/api/clients', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newClient)
-    }).catch(err => console.error('Failed to save client on backend:', err));
-
-    setClients(prev => [...prev, newClient]);
-    setActiveModal(null);
-    triggerNotification(`Successfully provisioned tenant: ${newClientName}`, 'success');
+    try {
+      const response = await apiFetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newClient)
+      });
+      if (!response.ok) throw new Error(`Client was not persisted (${response.status})`);
+      const savedClient = await response.json();
+      if (!savedClient?.id) throw new Error('Client API returned no committed record');
+      setClients(prev => [...prev, savedClient]);
+      setActiveModal(null);
+      triggerNotification(`Client record created: ${newClientName}`, 'success');
+    } catch (error) {
+      console.error('Failed to save client on backend:', error);
+      triggerNotification(`Client record was not created: ${newClientName}`, 'info');
+      return;
+    }
 
     // Reset fields
     setNewClientName('');
@@ -679,7 +637,7 @@ export default function App() {
   };
 
   // Workspace actions: Register New Software Passport
-  const handleRegisterPassport = (e: React.FormEvent) => {
+  const handleRegisterPassport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPassName || !newPassVersion || !newPassPublisher) return;
 
@@ -689,16 +647,16 @@ export default function App() {
       version: newPassVersion,
       publisher: newPassPublisher,
       category: newPassCategory,
-      overallScore: 94,
-      securityScore: 96,
-      complianceScore: 93,
-      vendorReputationScore: 93,
+      overallScore: 0,
+      securityScore: 0,
+      complianceScore: 0,
+      vendorReputationScore: 0,
       releaseDate: new Date().toISOString().substring(0, 10),
       fileHash: '', // Pending SHA-256 verification via pipeline or file upload
       licenseType: newPassLicense,
       aiSummary: '', // No fake template summary; populated upon AI analysis run
       sbom: [
-        { name: newPassName.toLowerCase().replace(/\s+/g, '-'), version: newPassVersion, license: newPassLicense, purl: `pkg:generic/${newPassName.toLowerCase()}@${newPassVersion}`, depth: 0, dependencyType: 'Direct', trustLevel: 'Trusted' }
+        { name: newPassName.toLowerCase().replace(/\s+/g, '-'), version: newPassVersion, license: newPassLicense, purl: `pkg:generic/${newPassName.toLowerCase()}@${newPassVersion}`, depth: 0, dependencyType: 'Direct', trustLevel: 'Review Required' }
       ],
       evidence: [], // Empty until verified cryptographic signatures or evidence are attached
       vulnerabilities: [],
@@ -707,15 +665,23 @@ export default function App() {
       ]
     };
 
-    apiFetch('/api/passports', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newPassport)
-    }).catch(err => console.error('Failed to save passport on backend:', err));
-
-    setPassports(prev => [newPassport, ...prev]);
-    setActiveModal(null);
-    triggerNotification(`Successfully registered passport: ${newPassName}`, 'success');
+    try {
+      const response = await apiFetch('/api/passports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPassport)
+      });
+      if (!response.ok) throw new Error(`Passport was not persisted (${response.status})`);
+      const savedPassport = await response.json();
+      if (!savedPassport?.id) throw new Error('Passport API returned no committed record');
+      setPassports(prev => [savedPassport, ...prev]);
+      setActiveModal(null);
+      triggerNotification(`Passport record created: ${newPassName}`, 'success');
+    } catch (error) {
+      console.error('Failed to save passport on backend:', error);
+      triggerNotification(`Passport record was not created: ${newPassName}`, 'info');
+      return;
+    }
 
     // Reset fields
     setNewPassName('');

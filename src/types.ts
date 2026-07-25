@@ -4,7 +4,7 @@
  */
 
 export type Severity = 'Critical' | 'High' | 'Medium' | 'Low';
-export type RiskLevel = 'Critical' | 'High' | 'Medium' | 'Low' | 'Safe';
+export type RiskLevel = 'Critical' | 'High' | 'Medium' | 'Low' | 'Safe' | 'Unknown';
 export type ScanStatus = 'Success' | 'Failed' | 'Scanning' | 'scan target not yet instrumented';
 export type AlertStatus = 'Active' | 'Snoozed' | 'Resolved';
 

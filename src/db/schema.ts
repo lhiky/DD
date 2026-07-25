@@ -12,7 +12,7 @@ export const users = pgTable('users', {
   uid: text('uid').notNull().unique(), // Firebase Auth string UID
   email: text('email').notNull(),
   tenantId: text('tenant_id').notNull().default('tenant-default'), // Default tenant_id
-  role: text('role').notNull().default('Admin'), // RBAC Roles: Owner, Admin, Technician, Viewer, Client
+  role: text('role').notNull().default('Viewer'), // RBAC Roles: Owner, Admin, Technician, Viewer, Client
   companyName: text('company_name'),
   roleTitle: text('role_title'),
   numTechnicians: integer('num_technicians'),
@@ -32,8 +32,8 @@ export const clients = pgTable('clients', {
   name: text('name').notNull(),
   domain: text('domain').notNull(),
   industry: text('industry').notNull(),
-  trustScore: integer('trust_score').notNull().default(85),
-  riskLevel: text('risk_level').notNull().default('Medium'),
+  trustScore: integer('trust_score').notNull().default(0),
+  riskLevel: text('risk_level').notNull().default('Unknown'),
   avatarColor: text('avatar_color').notNull().default('indigo'),
   subscriptionTier: text('subscription_tier').notNull().default('Standard'),
   joinedDate: text('joined_date').notNull(),
@@ -55,10 +55,10 @@ export const passports = pgTable('passports', {
   version: text('version').notNull(),
   publisher: text('publisher').notNull(),
   category: text('category').notNull(),
-  overallScore: integer('overall_score').notNull().default(80),
-  securityScore: integer('security_score').notNull().default(80),
-  complianceScore: integer('compliance_score').notNull().default(80),
-  vendorReputationScore: integer('vendor_reputation_score').notNull().default(80),
+  overallScore: integer('overall_score').notNull().default(0),
+  securityScore: integer('security_score').notNull().default(0),
+  complianceScore: integer('compliance_score').notNull().default(0),
+  vendorReputationScore: integer('vendor_reputation_score').notNull().default(0),
   releaseDate: text('release_date').notNull(),
   fileHash: text('file_hash').notNull(),
   licenseType: text('license_type').notNull(),
@@ -76,8 +76,8 @@ export const scans = pgTable('scans', {
   targetName: text('target_name').notNull(),
   scanType: text('scan_type').notNull(),
   triggeredBy: text('triggered_by').notNull(),
-  status: text('status').notNull().default('Success'),
-  durationMs: integer('duration_ms').notNull().default(120),
+  status: text('status').notNull().default('Pending'),
+  durationMs: integer('duration_ms').notNull().default(0),
   findingsCount: integer('findings_count'),
   timestamp: text('timestamp').notNull(),
   clientName: text('client_name').notNull(),
@@ -195,8 +195,8 @@ export const pilotSoftwareAssets = pgTable('pilot_software_assets', {
   vendor: text('vendor').notNull(),
   version: text('version').notNull(),
   dependenciesCount: integer('dependencies_count').notNull().default(0),
-  riskLevel: text('risk_level').notNull().default('Low'),
-  trustScore: integer('trust_score').notNull().default(100),
+  riskLevel: text('risk_level').notNull().default('Unknown'),
+  trustScore: integer('trust_score').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -218,7 +218,7 @@ export const pilotFeedbackItems = pgTable('pilot_feedback_items', {
   orgId: text('org_id').notNull(),
   contactName: text('contact_name').notNull(),
   comment: text('comment').notNull(),
-  rating: integer('rating').notNull().default(5),
+  rating: integer('rating').notNull().default(0),
   submittedAt: text('submitted_at').notNull(),
 });
 
@@ -420,5 +420,4 @@ export const workSessionRelations = relations(workSessions, ({ one }) => ({
     references: [appUsers.id],
   }),
 }));
-
 

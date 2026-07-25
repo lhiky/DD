@@ -20,14 +20,7 @@ export default function AssetsView({ clients, searchQuery, assets, onUpdateAsset
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Dynamic server endpoints with a hardcoded fallback
-  const systemAssets = assets || [
-    { id: 'as-1', hostName: 'db-prod-primary.node.internal', type: 'Virtual Machine', clientName: 'Apex Financial Portfolio', environment: 'Production', OS: 'RHEL 9.2', activePassport: 'PostgreSQL Database Engine', health: 'Compliant' },
-    { id: 'as-2', hostName: 'k8s-ingress-controller-01.internal', type: 'Kubernetes Pod', clientName: 'Nexus Healthcare Systems', environment: 'Production', OS: 'Alpine Linux', activePassport: 'Kubernetes Cluster Daemon', health: 'Vulnerable' },
-    { id: 'as-3', hostName: 'edge-nginx-load-balancer-04', type: 'Bare Metal Server', clientName: 'Acme Corporate Technologies', environment: 'Production', OS: 'Ubuntu 22.04', activePassport: 'Nginx Edge Proxy', health: 'Compliant' },
-    { id: 'as-4', hostName: 'staging-redis-cache-service', type: 'Virtual Machine', clientName: 'Acme Corporate Technologies', environment: 'Staging', OS: 'Debian 12', activePassport: 'Redis In-Memory Store', health: 'Compliant' },
-    { id: 'as-5', hostName: 'billing-log4j-app-server-02', type: 'Docker Container', clientName: 'Vanguard Grid Operators', environment: 'Production', OS: 'Debian 11', activePassport: 'Apache Log4j Core', health: 'Vulnerable' }
-  ];
+  const systemAssets = assets ?? [];
 
   // Filter assets using useMemo and filterData utility
   const filteredAssets = useMemo(() => {

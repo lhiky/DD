@@ -218,24 +218,24 @@ export default function ComplianceView({ clients }: ComplianceViewProps) {
       name: 'SOC 2 Type II Auditing Controls',
       description: 'Trust Services Criteria regarding Security, Availability, Processing Integrity, Confidentiality, and Privacy.',
       controls: [
-        { code: 'CC6.1', description: 'Logically isolates tenant systems and verifies package signatures in build pipeline.', status: 'Compliant', evidence: 'Cosign signatures matched in CI/CD logs.' },
-        { code: 'CC7.2', description: 'Evaluates and patches high or critical CVE vulnerabilities in runtime containers within SLA.', status: 'Compliant', evidence: 'Daily vulnerability attestation active.' },
-        { code: 'CC8.1', description: 'Assesses third-party software supplier reputation profiles and verifies licensing compliance.', status: 'Attention Required', evidence: 'Vanguard Grid contains 1 unverified SSPL license.' }
+        { code: 'CC6.1', description: 'Logical access and software-signature controls.', status: 'Not verified', evidence: 'Awaiting evidence' },
+        { code: 'CC7.2', description: 'Vulnerability evaluation and remediation controls.', status: 'Not verified', evidence: 'Scan not run' },
+        { code: 'CC8.1', description: 'Supplier and license review controls.', status: 'Not verified', evidence: 'Awaiting evidence' }
       ]
     },
     ISO27001: {
       name: 'ISO 27001 Information Security Management ISMS',
       description: 'Systematic approach to managing sensitive company information so that it remains secure.',
       controls: [
-        { code: 'A.12.6.1', description: 'Management of technical vulnerabilities via regular scanning and SBOM software passport checks.', status: 'Compliant', evidence: 'Daily attestation audit streams active.' },
-        { code: 'A.18.1.1', description: 'Identification of applicable legislation and contractual requirements regarding proprietary software licenses.', status: 'Compliant', evidence: 'Automatic license scanner logs verified.' }
+        { code: 'A.12.6.1', description: 'Management of technical vulnerabilities.', status: 'Not verified', evidence: 'Scan not run' },
+        { code: 'A.18.1.1', description: 'Applicable legal and license requirements.', status: 'Not verified', evidence: 'Awaiting evidence' }
       ]
     },
     HIPAA: {
       name: 'HIPAA Security & Privacy Safeguards',
       description: 'Technical and administrative controls required to protect Protected Health Information (PHI) under US law.',
       controls: [
-        { code: '§164.312(a)', description: 'Access control mechanisms ensuring only certified software and signed modules interface with PHI database nodes.', status: 'Compliant', evidence: 'PostgreSQL DB engine passport certified.' }
+        { code: '§164.312(a)', description: 'Access control mechanisms for systems handling PHI.', status: 'Not verified', evidence: 'Awaiting evidence' }
       ]
     }
   };
@@ -359,7 +359,7 @@ export default function ComplianceView({ clients }: ComplianceViewProps) {
   };
 
   // Filter logic
-  const filteredEvents = auditTimelineEvents.filter(event => {
+  const filteredEvents = ([] as AuditTimelineEvent[]).filter(event => {
     const matchesSearch = event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           event.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           event.auditor.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -976,4 +976,3 @@ export default function ComplianceView({ clients }: ComplianceViewProps) {
     </div>
   );
 }
-

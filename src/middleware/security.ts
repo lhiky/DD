@@ -116,6 +116,8 @@ export const requireAuth = async (
 
       if (dbUser) {
         // User was invited with a pre-assigned role and tenantId
+        const previousUid = dbUser.uid;
+        const previousOnboarded = dbUser.onboarded;
         const updated = await db.update(users)
           .set({ uid, onboarded: 1 })
           .where(eq(users.id, dbUser.id))
@@ -128,6 +130,9 @@ export const requireAuth = async (
           role: dbUser.role
         });
         if (!claimRes1.success) {
+          await db.update(users)
+            .set({ uid: previousUid, onboarded: previousOnboarded })
+            .where(eq(users.id, dbUser.id));
           console.error(`[Multi-Tenant Auth Denied] Custom claims push failed for invited user ${email}: ${claimRes1.reason}`);
           return res.status(403).json({ error: `Forbidden: Security claim assignment failed (${claimRes1.reason})` });
         }
@@ -155,6 +160,7 @@ export const requireAuth = async (
           role: dbUser.role
         });
         if (!claimRes2.success) {
+          await db.delete(users).where(eq(users.id, dbUser.id));
           console.error(`[Multi-Tenant Auth Denied] Custom claims push failed for new user ${email}: ${claimRes2.reason}`);
           return res.status(403).json({ error: `Forbidden: Security claim assignment failed (${claimRes2.reason})` });
         }

@@ -22,6 +22,10 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const securitySourcePath = path.join(__dirname, '..', 'src', 'middleware', 'security.ts');
 const securitySource = readFileSync(securitySourcePath, 'utf-8');
+const firebaseAdminSource = readFileSync(
+  path.join(__dirname, '..', 'src', 'lib', 'firebase-admin.ts'),
+  'utf-8'
+);
 
 describe('auth regression guard — src/middleware/security.ts', () => {
   it('accepts bearer tokens only from the Authorization header, never URL query parameters', () => {
@@ -114,5 +118,22 @@ describe('error-tracking regression guard — server.ts', () => {
 
   it('actually captures exceptions through Sentry, not just initializes it', () => {
     expect(serverSource).toMatch(/Sentry\.captureException/);
+  });
+});
+
+describe('Firebase Admin claim assignment regression guard', () => {
+  it('contains no production special-prefix claim bypass', () => {
+    expect(firebaseAdminSource).not.toMatch(/uid\.startsWith\(['"](?:dev-|invited-)/);
+  });
+
+  it('reads claims back after assignment', () => {
+    expect(firebaseAdminSource).toMatch(/setCustomUserClaims/);
+    expect(firebaseAdminSource).toMatch(/getUser\(uid\)/);
+  });
+
+  it('returns failure when assignment or read-back throws', () => {
+    expect(firebaseAdminSource).not.toMatch(/Bypassing claims push/);
+    const catchBlock = firebaseAdminSource.slice(firebaseAdminSource.indexOf('} catch'));
+    expect(catchBlock).toMatch(/success:\s*false/);
   });
 });

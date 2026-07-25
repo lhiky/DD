@@ -58,6 +58,17 @@ describe.skipIf(!hasDb)('live server integration', () => {
     expect(res.status).toBe(200);
   });
 
+  it('reports the database unavailable when the configured database cannot answer the probe', async () => {
+    const res = await fetch(`${BASE_URL}/api/health`);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      status: 'unavailable',
+      db: 'unavailable',
+      code: 'DB_UNAVAILABLE'
+    });
+  });
+
   it('rejects requests to protected routes with no auth token (401)', async () => {
     const res = await fetch(`${BASE_URL}/api/user/me`);
     expect(res.status).toBe(401);

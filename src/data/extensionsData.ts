@@ -69,7 +69,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
     dependencies: [],
     permissions: ['read_certificates', 'sign_passport', 'verify_signatures'],
-    digitalSignature: 'SHA-256 Verified: 0x9B1F...4C8E signed by SPR Root CA',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v2.4.1', changes: ['Enhanced software DNA hashing speed.', 'Updated CA key validation list.'] },
       { version: 'v2.3.0', changes: ['Added organization identity registry integration.'] }
@@ -103,7 +103,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-rose-500/10 text-rose-400 border border-rose-500/20',
     dependencies: ['identity'],
     permissions: ['run_scans', 'scan_source_code', 'alert_notifications', 'manage_cves'],
-    digitalSignature: 'SHA-256 Verified: 0xA4F2...11D9 signed by Sentinel Trust Corp',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v3.2.0', changes: ['Integrated real-time zero-day vulnerability streams.', 'SAST engines run 2.5x faster.'] },
       { version: 'v3.1.5', changes: ['Improved AWS Cloud Security posture controls.'] }
@@ -141,7 +141,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
     dependencies: ['identity', 'security'],
     permissions: ['calculate_metrics', 'read_telemetry', 'generate_forecasts'],
-    digitalSignature: 'SHA-256 Verified: 0xC1C3...9E52 signed by Global Audit Trust',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v1.8.9', changes: ['Optimized trust comparisons engine.', 'Added trust forecasting model.'] }
     ],
@@ -175,7 +175,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
     dependencies: ['identity'],
     permissions: ['create_passport', 'seal_passport', 'share_passport', 'api_access'],
-    digitalSignature: 'SHA-256 Verified: 0xE8A9...218A signed by SPR Root CA',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v3.0.1', changes: ['Added JSON schema verification.', 'Enabled quick export to CSV/Excel.'] }
     ],
@@ -207,7 +207,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-teal-500/10 text-teal-400 border border-teal-500/20',
     dependencies: ['identity', 'security'],
     permissions: ['read_compliance', 'modify_assessments', 'collect_evidence'],
-    digitalSignature: 'SHA-256 Verified: 0xD7B8...55E4 signed by Compliance Standard Alliance',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v2.5.0', changes: ['Added Cyber Resilience Act (CRA) compliance maps.', 'Fully mapped FedRAMP Moderate controls.'] }
     ],
@@ -243,7 +243,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20',
     dependencies: ['identity'],
     permissions: ['write_ledger', 'verify_hashes', 'read_evidence_vault'],
-    digitalSignature: 'SHA-256 Verified: 0xF3C9...41E8 signed by Ledger Guard Inc',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v1.3.4', changes: ['Upgraded evidence compression algorithms.', 'Added block validation hooks.'] }
     ],
@@ -273,7 +273,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
     dependencies: ['identity', 'security', 'trust'],
     permissions: ['use_ai_model', 'access_codebase', 'generate_recommendations'],
-    digitalSignature: 'SHA-256 Verified: 0x93FA...DE83 signed by Gemini Secure Labs',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v4.0.0', changes: ['Upgraded to Gemini 2.5 Flash model.', 'Added AI Root Cause Analysis engine.', 'Added interactive chat assistant.'] }
     ],
@@ -305,7 +305,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
     dependencies: ['identity'],
     permissions: ['read_assets', 'modify_assets', 'scan_network'],
-    digitalSignature: 'SHA-256 Verified: 0xB5A8...901D signed by Asset Guard Group',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v2.0.4', changes: ['Optimized network mapping layout.', 'Enabled bulk CSV imports.'] }
     ],
@@ -335,7 +335,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
     dependencies: ['identity', 'compliance'],
     permissions: ['read_vendors', 'modify_vendors', 'audit_supply_chain'],
-    digitalSignature: 'SHA-256 Verified: 0xA7D3...43F9 signed by Supply Chain Council',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v1.6.0', changes: ['Added direct SBOM integration for vendor imports.'] }
     ],
@@ -363,7 +363,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
     dependencies: ['identity', 'passport'],
     permissions: ['read_pipelines', 'trigger_builds', 'manage_webhooks', 'k8s_access'],
-    digitalSignature: 'SHA-256 Verified: 0xE4C7...297B signed by DevSecOps Alliance',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v2.8.0', changes: ['Added ArgoCD deployment sync verification.', 'Enhanced Kubernetes admission webhook handler.'] }
     ],
@@ -397,7 +397,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20',
     dependencies: ['identity', 'assets'],
     permissions: ['read_cloud_configs', 'verify_cloud_iam'],
-    digitalSignature: 'SHA-256 Verified: 0xC6C2...77D1 signed by Cloud Native Alliance',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v1.4.0', changes: ['Added Oracle Cloud support.', 'Enhanced Azure Active Directory policy mapper.'] }
     ],
@@ -425,7 +425,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
     dependencies: ['identity', 'security'],
     permissions: ['read_metrics', 'push_alerts', 'read_logs'],
-    digitalSignature: 'SHA-256 Verified: 0xF1B4...283C signed by Sentinel Trust Corp',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v2.1.2', changes: ['Optimized telemetry charts.', 'Added slack webhook alerts.'] }
     ],
@@ -454,7 +454,7 @@ export const allExtensions: Extension[] = [
     iconColor: 'bg-teal-500/10 text-teal-400 border border-teal-500/20',
     dependencies: ['identity', 'compliance', 'evidence'],
     permissions: ['compile_reports', 'export_files', 'read_all_data'],
-    digitalSignature: 'SHA-256 Verified: 0xA2F9...41CD signed by Global Audit Trust',
+    digitalSignature: 'Not verified — no signature evidence provided',
     changelog: [
       { version: 'v2.0.1', changes: ['Added compliance chart renderings to PDF exports.', 'Added multi-select bulk report generation.'] }
     ],

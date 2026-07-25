@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { apiFetch } from '../utils/apiClient';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Cpu,
@@ -383,11 +384,35 @@ export default function TrustOSView({ passports, clients, selectedClientId }: Tr
     'Where are we exposed?'
   ];
 
-  const handleAskAdvisor = (queryText: string) => {
+  const handleAskAdvisor = async (queryText: string) => {
     if (!queryText.trim()) return;
     setIsAdvisorLoading(true);
     setAdvisorQuery('');
 
+    try {
+      const response = await apiFetch('/api/ai/advisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: queryText })
+      });
+      if (!response.ok) throw new Error(`Advisor unavailable (${response.status})`);
+      const data = await response.json();
+      const reply = typeof data.reply === 'string' && data.reply.trim()
+        ? data.reply
+        : 'Advisor returned no analysis.';
+      setAdvisorResponses(prev => [...prev, { query: queryText, reply }]);
+    } catch (error) {
+      console.error('[Trust Advisor] Request failed:', error);
+      setAdvisorResponses(prev => [
+        ...prev,
+        { query: queryText, reply: 'Advisor unavailable. No analysis was generated.' }
+      ]);
+    } finally {
+      setIsAdvisorLoading(false);
+    }
+    return;
+
+    /* Removed from execution: legacy canned advisor response block.
     // Simulate smart analytical reply from the Trust Advisor based on the specific prompt
     setTimeout(() => {
       let responseText = '';
@@ -411,6 +436,7 @@ export default function TrustOSView({ passports, clients, selectedClientId }: Tr
       ]);
       setIsAdvisorLoading(false);
     }, 1200);
+    */
   };
 
   // 4. Future Marketplace States

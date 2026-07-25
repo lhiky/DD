@@ -45,37 +45,31 @@ export async function setUserCustomClaims(
   uid: string, 
   claims: { workspaceId: string; role: string }
 ): Promise<{ success: boolean; reason?: string }> {
-  if (uid.startsWith('dev-') || uid.startsWith('invited-')) {
-    return { success: true };
-  }
   try {
-    await adminAuth.setCustomUserClaims(uid, {
+    const expectedClaims = {
       workspaceId: claims.workspaceId,
       tenantId: claims.workspaceId,
       role: claims.role,
-    });
+    };
+    await adminAuth.setCustomUserClaims(uid, expectedClaims);
+    const updatedUser = await adminAuth.getUser(uid);
+    const actualClaims = updatedUser.customClaims || {};
+    if (
+      actualClaims.workspaceId !== expectedClaims.workspaceId ||
+      actualClaims.tenantId !== expectedClaims.tenantId ||
+      actualClaims.role !== expectedClaims.role
+    ) {
+      console.error('[Firebase Admin Claims Verification Failed]', { uid });
+      return { success: false, reason: 'Firebase custom-claim read-back did not match the requested assignment' };
+    }
     console.log(`[Firebase Admin] Set custom claims for user ${uid}: workspaceId=${claims.workspaceId}, role=${claims.role}`);
     return { success: true };
   } catch (err: any) {
     const errorMsg = err?.message || String(err);
-    console.error(`[Firebase Admin Error] Failed to set custom claims for user ${uid}:`, err);
-
-    // If Identity Toolkit API is unconfigured or GCP service account credentials lack Admin permissions in this env,
-    // fallback to DB RBAC so workspace setup and role updates complete safely.
-    if (
-      err?.code === 'auth/internal-error' ||
-      err?.status === 403 ||
-      errorMsg.includes('identitytoolkit') ||
-      errorMsg.includes('disabled') ||
-      errorMsg.includes('credential') ||
-      errorMsg.includes('permission') ||
-      errorMsg.includes('project')
-    ) {
-      console.warn(`[Firebase Admin] Identity Toolkit API or credentials unconfigured for project. Bypassing claims push, defaulting to DB RBAC.`);
-      return { success: true };
-    }
-
+    console.error('[Firebase Admin Claims Assignment Failed]', {
+      uid,
+      code: err?.code || 'FIREBASE_CLAIMS_ERROR'
+    });
     return { success: false, reason: errorMsg };
   }
 }
-
