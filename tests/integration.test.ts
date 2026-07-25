@@ -42,7 +42,7 @@ async function waitForServer(url: string, timeoutMs = 15000): Promise<void> {
 
 describe.skipIf(!hasDb)('live server integration', () => {
   beforeAll(async () => {
-    serverProcess = spawn('npx', ['tsx', 'server.ts'], {
+    serverProcess = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server.ts'], {
       env: { ...process.env, PORT: TEST_PORT, NODE_ENV: 'test' },
       stdio: 'pipe'
     });
@@ -73,6 +73,15 @@ describe.skipIf(!hasDb)('live server integration', () => {
       headers: { Authorization: `Bearer ${forgedToken}` }
     });
     expect(res.status).toBe(401);
+  });
+
+  it('rejects a token supplied only through a URL query parameter', async () => {
+    const res = await fetch(`${BASE_URL}/api/user/me?token=not-a-bearer-token`);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      error: 'Unauthorized: Missing or invalid authorization token'
+    });
   });
 
   it('sets baseline security headers via helmet', async () => {
