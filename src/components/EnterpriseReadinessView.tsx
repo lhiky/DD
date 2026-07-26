@@ -77,7 +77,7 @@ export default function EnterpriseReadinessView({ clients }: EnterpriseReadiness
 
   // The complete 100+ item database matching the user's checklist
   const checklistData = useMemo(() => {
-    return [
+    const capabilityCatalog = [
       // 1. Critical (Must Have)
       { id: 'mc-1', category: 'critical', name: 'Multi-tenant security with customer isolation', status: 'Deployed', desc: 'SaaS multi-tenant schema with logical division of tenant domains on all postgres SQL tables and strict Row-Level Security (RLS) constraints.', proof: 'Supabase Postgres RLS Enabled' },
       { id: 'mc-2', category: 'critical', name: 'Role-Based Access Control (RBAC)', status: 'Deployed', desc: 'Granular permissions for Admin, Manager, Analyst, Auditor, and Viewer with token validation constraints.', proof: 'src/App.tsx line 45-160' },
@@ -176,6 +176,16 @@ export default function EnterpriseReadinessView({ clients }: EnterpriseReadiness
       { id: 'tr-11', category: 'trust', name: 'AI Agent Passports', status: 'Deployed', desc: 'Verified identities, compliance records, and strict access boundaries for autonomous software agents.', proof: 'Trust OS Layer 62 Agent Passport' },
       { id: 'tr-12', category: 'trust', name: 'Global Decentralized Trust Registry', status: 'Deployed', desc: 'Searchable repository indexing validated digital trust certificates from across the globe.', proof: 'Trust OS Layer 64 public registry' }
     ];
+
+    // This screen is a capability-planning catalog, not an attestation.
+    // Until a capability is linked to independently checkable runtime evidence,
+    // it must not be presented to users as deployed or verified.
+    return capabilityCatalog.map(item => ({
+      ...item,
+      status: 'Unverified',
+      desc: `Target capability: ${item.name}. Implementation and operational evidence have not been independently verified.`,
+      proof: 'No verification evidence is connected.'
+    }));
   }, []);
 
   // Filter checklist by category & search term

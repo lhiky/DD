@@ -59,6 +59,14 @@ describe('production truth regressions', () => {
     expect(source).toMatch(/const isPublisherVerified = false/);
     expect(source).toMatch(/const complianceScore = Math\.min\(100, verifiedEvidence \* 20\)/);
   });
+
+  it('renders the enterprise capability catalog as unverified until evidence is connected', () => {
+    const source = read('src/components/EnterpriseReadinessView.tsx');
+    expect(source).toMatch(/return capabilityCatalog\.map\(item =>/);
+    expect(source).toMatch(/status:\s*'Unverified'/);
+    expect(source).toMatch(/Implementation and operational evidence have not been independently verified/);
+    expect(source).toMatch(/No verification evidence is connected/);
+  });
 });
 
 describe('independent OSV worker truth boundaries', () => {
