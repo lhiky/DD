@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server.ts",
-    "build": "cross-env NODE_ENV=production vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && esbuild worker.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/worker.cjs",
+    "build": "cross-env NODE_ENV=production vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && esbuild worker.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/worker.cjs && esbuild sites-entry.ts --bundle --platform=browser --format=esm --outfile=dist/server/index.js && node -e \"import { copyFile, mkdir } from 'node:fs/promises'; await mkdir('dist/.openai', { recursive: true }); await copyFile('.openai/hosting.json', 'dist/.openai/hosting.json');\"",
     "start": "cross-env NODE_ENV=production node dist/server.cjs",
     "worker": "cross-env NODE_ENV=production node dist/worker.cjs",
     "worker:dev": "tsx worker.ts",
