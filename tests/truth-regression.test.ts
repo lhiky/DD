@@ -160,6 +160,15 @@ describe('independent OSV worker truth boundaries', () => {
     expect(worker).toContain('/zip/${commitSha}');
   });
 
+  it('uses a ZIP-capable extractor in the Linux worker image', () => {
+    const worker = read('src/workers/osv-worker.ts');
+    const dockerfile = read('Dockerfile.worker');
+    expect(dockerfile).toMatch(/apt-get install[^\n]+unzip/);
+    expect(worker).toContain("process.platform === 'win32' ? 'tar.exe' : 'unzip'");
+    expect(worker).toContain("['-Z1', archivePath]");
+    expect(worker).toContain("['-q', archivePath, '-d', extractPath]");
+  });
+
   it('publishes tenant-scoped repository reports using controlled evidence states', () => {
     const server = read('server.ts');
     expect(server).toContain("'/api/repository-scans/:jobId/report'");

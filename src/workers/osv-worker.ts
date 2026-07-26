@@ -542,17 +542,28 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
     };
     const archivePath = path.join(tempRoot, 'repository.zip');
     const extractPath = path.join(tempRoot, 'extracted');
-    const tarExecutable = process.platform === 'win32' ? 'tar.exe' : 'tar';
+    const archiveExecutable = process.platform === 'win32' ? 'tar.exe' : 'unzip';
     await mkdir(extractPath);
     await downloadArchive(
       `https://codeload.github.com/${encodeURIComponent(source.repository_owner)}/${encodeURIComponent(source.repository_name)}/zip/${commitSha}`,
       archivePath
     );
-    const listing = await runBounded(tarExecutable, ['-tf', archivePath], ACQUISITION_TIMEOUT_MS, 10 * 1024 * 1024);
+    const listing = await runBounded(
+      archiveExecutable,
+      process.platform === 'win32' ? ['-tf', archivePath] : ['-Z1', archivePath],
+      ACQUISITION_TIMEOUT_MS,
+      10 * 1024 * 1024
+    );
     if (listing.code !== 0) throw new Error('REPOSITORY_ACQUISITION_FAILED');
     const entries = listing.stdout.toString('utf8').split(/\r?\n/).filter(Boolean);
     validateArchiveEntries(entries);
-    const extraction = await runBounded(tarExecutable, ['-xf', archivePath, '-C', extractPath], ACQUISITION_TIMEOUT_MS);
+    const extraction = await runBounded(
+      archiveExecutable,
+      process.platform === 'win32'
+        ? ['-xf', archivePath, '-C', extractPath]
+        : ['-q', archivePath, '-d', extractPath],
+      ACQUISITION_TIMEOUT_MS
+    );
     if (extraction.code !== 0) throw new Error('REPOSITORY_ACQUISITION_FAILED');
     const roots = await readdir(extractPath, { withFileTypes: true });
     const archiveRoot = roots.find(entry => entry.isDirectory());

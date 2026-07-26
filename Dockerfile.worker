@@ -20,7 +20,7 @@ ARG SYFT_VERSION=1.49.0
 ARG SYFT_SHA256=7aa2f03ee92739cf643279ba3990548b9925d4e22cae13f46831ee62821147fe
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tar \
+    && apt-get install -y --no-install-recommends ca-certificates curl tar unzip \
     && curl --fail --silent --show-error --location \
       "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz" \
       --output /tmp/syft.tar.gz \
