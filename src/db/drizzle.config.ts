@@ -37,7 +37,7 @@ export default defineConfig({
     user: user,
     password: password,
     database: sqlDbName,
-    ssl: false, // Typically false when connecting via Cloud SQL Auth Proxy.
+    ssl: process.env.SQL_SSL === 'require' || process.env.SQL_SSL === 'true',
   },
   verbose: true, // Enable verbose output.
 });

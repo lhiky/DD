@@ -2897,7 +2897,10 @@ async function startServer() {
       res.json({ received: true, eventType: event.type });
     } catch (err: any) {
       trackAndLogError(err, 'POST /api/billing/webhook');
-      res.status(400).json({ error: `Webhook signature verification failed: ${err?.message}` });
+      res.status(400).json({
+        error: 'STRIPE_WEBHOOK_SIGNATURE_INVALID',
+        message: 'Webhook signature verification failed.'
+      });
     }
   });
 
@@ -2930,11 +2933,9 @@ async function startServer() {
         });
       }
       
-      await db.update(billingTable)
-        .set({ status: 'Paid' })
-        .where(eq(billingTable.id, billingId));
-      
-      res.redirect('/billing/success');
+      // Browser redirects are not payment evidence. Billing state is updated
+      // only by the signed webhook handler above.
+      res.redirect('/billing/success?status=awaiting-webhook');
     } catch (err) {
       trackAndLogError(err, 'Stripe Success callback handler');
       res.status(500).json({ 

@@ -9,11 +9,15 @@ import * as schema from './schema.ts';
 
 // Function to create a new connection pool with Object configuration
 export const createPool = () => {
+  const sslMode = process.env.SQL_SSL?.trim().toLowerCase();
   return new Pool({
     host: process.env.SQL_HOST,
     user: process.env.SQL_USER,
     password: process.env.SQL_PASSWORD,
     database: process.env.SQL_DB_NAME,
+    ssl: sslMode === 'require' || sslMode === 'true'
+      ? { rejectUnauthorized: true }
+      : undefined,
     connectionTimeoutMillis: 10000, // Fail fast if Postgres is down (10s limit)
     max: 20, // Max clients in pool (prevents connection starvation)
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds of inactivity

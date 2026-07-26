@@ -13,6 +13,6 @@ export default defineConfig({
     user: process.env.SQL_USER,
     password: process.env.SQL_PASSWORD,
     database: process.env.SQL_DB_NAME,
-    ssl: false
+    ssl: process.env.SQL_SSL === 'require' || process.env.SQL_SSL === 'true'
   }
 });

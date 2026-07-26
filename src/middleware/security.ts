@@ -167,11 +167,34 @@ export const requireAuth = async (
         console.log(`[Multi-Tenant Auth] Registered new user: ${email} with default Viewer role on Tenant: ${defaultTenantId}`);
       }
     } else {
-      // Sync custom claims if token claims exist and differ from database state
+      // Tenant and role claims are mandatory on every workspace request. Firebase
+      // claim updates do not alter an already-issued ID token, so synchronize the
+      // account but deny this request until the client obtains a fresh token.
       const claimRole = decodedToken.role;
       const claimWorkspace = decodedToken.workspaceId || decodedToken.tenantId;
 
-      if (claimRole && claimWorkspace && (claimRole !== dbUser.role || claimWorkspace !== dbUser.tenantId)) {
+      if (!claimRole || !claimWorkspace) {
+        const claimResult = await setUserCustomClaims(uid, {
+          workspaceId: dbUser.tenantId,
+          role: dbUser.role
+        });
+        if (!claimResult.success) {
+          console.error('[Multi-Tenant Auth Denied]', {
+            uid,
+            code: 'REQUIRED_CLAIMS_ASSIGNMENT_FAILED'
+          });
+          return res.status(403).json({
+            error: 'Forbidden: Required tenant or role claim is missing',
+            code: 'TOKEN_CLAIMS_MISSING'
+          });
+        }
+        return res.status(403).json({
+          error: 'Forbidden: Authentication claims were refreshed; obtain a new token',
+          code: 'TOKEN_CLAIMS_REFRESH_REQUIRED'
+        });
+      }
+
+      if (claimRole !== dbUser.role || claimWorkspace !== dbUser.tenantId) {
         const claimRes3 = await setUserCustomClaims(uid, {
           workspaceId: dbUser.tenantId,
           role: dbUser.role
@@ -180,6 +203,10 @@ export const requireAuth = async (
           console.error(`[Multi-Tenant Auth Denied] Custom claims sync failed for user ${email}: ${claimRes3.reason}`);
           return res.status(403).json({ error: `Forbidden: Security claim sync failed (${claimRes3.reason})` });
         }
+        return res.status(403).json({
+          error: 'Forbidden: Authentication claims changed; obtain a new token',
+          code: 'TOKEN_CLAIMS_REFRESH_REQUIRED'
+        });
       }
     }
 
