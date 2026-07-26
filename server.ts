@@ -3222,6 +3222,15 @@ async function startServer() {
   app.get('/api/agent-jobs/:jobId/logs', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const { jobId } = req.params;
+      const job = await db.select().from(agentJobsTable)
+        .where(and(
+          eq(agentJobsTable.id, jobId),
+          eq(agentJobsTable.tenantId, req.user!.tenantId)
+        ))
+        .then(rows => rows[0]);
+      if (!job) {
+        return res.status(404).json({ error: 'Agent job not found' });
+      }
       // Fetch logs chronologically
       const logs = await db.select()
         .from(agentLogsTable)

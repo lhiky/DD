@@ -94,6 +94,21 @@ describe('production truth regressions', () => {
     expect(server).not.toContain('Successfully remediated ${activeAlerts.length} active alerts.');
     expect(app).not.toMatch(/setPassports\(prev => prev\.map\(p => p\.id === updatedPassport\.id \? updatedPassport : p\)\);\s+apiFetch/);
   });
+
+  it('backs AI Brain and AI Swarm with supported server operations only', () => {
+    const brain = read('src/components/TrustBrainView.tsx');
+    const swarm = read('src/components/PassportSwarmView.tsx');
+    const server = read('server.ts');
+
+    expect(brain).toContain('/trust-observation');
+    expect(brain).toContain('Unknown dimensions');
+    expect(brain).not.toContain('overallScore: 96');
+    expect(swarm).toContain("agentId: 'osv-worker'");
+    expect(swarm).toContain("jobType: 'osv_manifest_scan'");
+    expect(swarm).not.toContain('automated_integrity_audit');
+    expect(swarm).not.toContain('24/7 Continuous Monitoring');
+    expect(server).toContain('eq(agentJobsTable.tenantId, req.user!.tenantId)');
+  });
 });
 
 describe('independent OSV worker truth boundaries', () => {
