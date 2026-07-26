@@ -169,6 +169,126 @@ export const trustObservationChanges = pgTable('trust_observation_changes', {
   materialityPolicyVersion: text('materiality_policy_version').notNull().default('spr.materiality.v1'),
 });
 
+// Continuous monitoring configuration. Secrets are held separately and only a
+// server-side credential reference is stored here.
+export const monitoringConfigurations = pgTable('monitoring_configurations', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  clientId: text('client_id').notNull(),
+  assetId: text('asset_id').notNull(),
+  passportId: text('passport_id').notNull(),
+  collectorId: text('collector_id').notNull(),
+  subjectType: text('subject_type').notNull(),
+  subjectIdentifier: text('subject_identifier').notNull(),
+  enabled: integer('enabled').notNull().default(1),
+  scheduleSeconds: integer('schedule_seconds').notNull(),
+  lastAttemptedAt: text('last_attempted_at'),
+  lastSuccessfulAt: text('last_successful_at'),
+  nextScheduledAt: text('next_scheduled_at').notNull(),
+  credentialReferenceId: text('credential_reference_id'),
+  failureCount: integer('failure_count').notNull().default(0),
+  consecutiveFailureCount: integer('consecutive_failure_count').notNull().default(0),
+  lastStatus: text('last_status').notNull().default('unknown'),
+  freshnessPolicyId: text('freshness_policy_id').notNull(),
+  confidencePolicyId: text('confidence_policy_id').notNull(),
+  createdBy: text('created_by').notNull(),
+  updatedBy: text('updated_by').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const collectorJobs = pgTable('collector_jobs', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  clientId: text('client_id').notNull(),
+  assetId: text('asset_id').notNull(),
+  passportId: text('passport_id').notNull(),
+  monitoringConfigurationId: text('monitoring_configuration_id'),
+  collectorId: text('collector_id').notNull(),
+  collectorVersion: text('collector_version').notNull(),
+  subjectType: text('subject_type').notNull(),
+  subjectIdentifier: text('subject_identifier').notNull(),
+  scheduleSource: text('schedule_source').notNull(),
+  observationWindow: text('observation_window').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  state: text('state').notNull().default('queued'),
+  attemptNumber: integer('attempt_number').notNull().default(0),
+  maximumAttempts: integer('maximum_attempts').notNull().default(3),
+  leaseOwner: text('lease_owner'),
+  leaseExpiresAt: text('lease_expires_at'),
+  heartbeatAt: text('heartbeat_at'),
+  createdAt: text('created_at').notNull(),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  nextAttemptAt: text('next_attempt_at').notNull(),
+  safeErrorCode: text('safe_error_code'),
+  safeErrorMessage: text('safe_error_message'),
+});
+
+export const collectorResults = pgTable('collector_results', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  clientId: text('client_id').notNull(),
+  assetId: text('asset_id').notNull(),
+  passportId: text('passport_id').notNull(),
+  jobId: text('job_id').notNull(),
+  collectorId: text('collector_id').notNull(),
+  collectorVersion: text('collector_version').notNull(),
+  subjectType: text('subject_type').notNull(),
+  subjectIdentifier: text('subject_identifier').notNull(),
+  status: text('status').notNull(),
+  startedAt: text('started_at').notNull(),
+  completedAt: text('completed_at').notNull(),
+  evidenceIds: text('evidence_ids').notNull().default('[]'),
+  findingIds: text('finding_ids').notNull().default('[]'),
+  verificationMethods: text('verification_methods').notNull().default('[]'),
+  limitations: text('limitations').notNull().default('[]'),
+  safeErrorCode: text('safe_error_code'),
+  safeErrorMessage: text('safe_error_message'),
+});
+
+export const alertSubscriptions = pgTable('alert_subscriptions', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  clientId: text('client_id'),
+  assetId: text('asset_id'),
+  passportId: text('passport_id'),
+  collectorId: text('collector_id'),
+  alertTypes: text('alert_types').notNull(),
+  minimumSeverity: text('minimum_severity').notNull(),
+  enabled: integer('enabled').notNull().default(1),
+  deliveryChannel: text('delivery_channel').notNull().default('in_app'),
+  destinationReference: text('destination_reference'),
+  createdBy: text('created_by').notNull(),
+  updatedBy: text('updated_by').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const inAppNotifications = pgTable('in_app_notifications', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  subscriptionId: text('subscription_id').notNull(),
+  alertId: text('alert_id').notNull(),
+  deduplicationKey: text('deduplication_key').notNull(),
+  createdAt: text('created_at').notNull(),
+  readAt: text('read_at'),
+});
+
+export const credentialReferences = pgTable('credential_references', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  provider: text('provider').notNull(),
+  encryptedPayload: text('encrypted_payload').notNull(),
+  encryptionKeyVersion: text('encryption_key_version').notNull(),
+  state: text('state').notNull().default('active'),
+  lastUsedAt: text('last_used_at'),
+  revokedAt: text('revoked_at'),
+  createdBy: text('created_by').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // 6. Integrations Table (with tenant_id isolation)
 export const integrations = pgTable('integrations', {
   id: text('id').primaryKey(),

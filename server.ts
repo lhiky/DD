@@ -73,6 +73,7 @@ import {
   canonicalize, observationHash, compareObservationPayloads, changeDeduplicationKey,
   classifyMateriality, MATERIALITY_POLICY_VERSION
 } from './src/utils/observation-history.ts';
+import { createMonitoringRouter } from './src/routes/monitoring.ts';
 
 // Load environment variables
 dotenv.config();
@@ -627,6 +628,7 @@ async function startServer() {
 
   // 3. Apply API Rate Limiting to all API routes
   app.use('/api', rateLimiter);
+  app.use('/api', createMonitoringRouter());
 
   // Public health and readiness endpoints
   app.get('/health', (_req, res) => {
