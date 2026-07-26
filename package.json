@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server.ts",
-    "build": "cross-env NODE_ENV=production vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs",
+    "build": "cross-env NODE_ENV=production vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server.cjs && esbuild worker.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/worker.cjs",
     "start": "cross-env NODE_ENV=production node dist/server.cjs",
+    "worker": "cross-env NODE_ENV=production node dist/worker.cjs",
+    "worker:dev": "tsx worker.ts",
     "clean": "node -e \"import { rm } from 'fs/promises'; await rm('dist', { recursive: true, force: true }); await rm('server.js', { force: true });\"",
     "lint": "tsc --noEmit",
     "test": "vitest run"

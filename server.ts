@@ -2096,19 +2096,54 @@ async function startServer() {
     try {
       const tenantId = req.user!.tenantId;
       const rows = await db.select().from(passportsTable).where(eq(passportsTable.tenantId, tenantId));
+      const persistedEvidence = await db.select()
+        .from(evidenceItemsTable)
+        .where(eq(evidenceItemsTable.tenantId, tenantId));
+      const persistedFindings = await db.select()
+        .from(scanFindingsTable)
+        .where(eq(scanFindingsTable.tenantId, tenantId));
       
       const safeParse = (str: any, fallback: any = []) => {
         if (typeof str !== 'string') return str ?? fallback;
         try { return JSON.parse(str); } catch { return fallback; }
       };
 
-      const parsed = rows.map(r => ({
-        ...r,
-        sbom: safeParse(r.sbom),
-        evidence: safeParse(r.evidence),
-        vulnerabilities: safeParse(r.vulnerabilities),
-        timeline: safeParse(r.timeline)
-      }));
+      const parsed = rows.map(r => {
+        const providerEvidence = persistedEvidence
+          .filter(item => item.assetId === r.id)
+          .map(item => ({
+            id: item.id,
+            name: item.name,
+            type: item.type,
+            status: 'OBSERVED',
+            signer: item.signer,
+            timestamp: item.timestamp,
+            hash: item.hash,
+            hashLabel: 'Integrity digest',
+            verifierEngineId: item.engineId,
+            failureReason: item.verificationFailureReason || undefined,
+          }));
+        const findings = persistedFindings
+          .filter(item => item.assetId === r.id)
+          .map(item => ({
+            id: item.id,
+            severity: item.severity,
+            title: item.title,
+            description: item.description,
+            component: item.component,
+            fixedVersion: item.fixedVersion,
+            status: item.status,
+            detectedAt: item.detectedAt,
+            source: item.engineId,
+          }));
+        return {
+          ...r,
+          sbom: safeParse(r.sbom),
+          evidence: [...safeParse(r.evidence), ...providerEvidence],
+          vulnerabilities: [...safeParse(r.vulnerabilities), ...findings],
+          timeline: safeParse(r.timeline)
+        };
+      });
       res.json(parsed);
     } catch (err) {
       trackAndLogError(err, 'GET /api/passports');
@@ -2213,26 +2248,22 @@ async function startServer() {
       let currentTimeline = body.timeline !== undefined ? body.timeline : JSON.parse(existing.timeline);
 
       // 2. Perform REAL calculations of scores based on vulnerabilities and evidence counts
-      let calcSecurityScore = 100;
-      currentVulnerabilities.forEach((v: any) => {
-        const severity = (v.severity || 'Medium').toLowerCase();
-        if (severity === 'critical') calcSecurityScore -= 15;
-        else if (severity === 'high') calcSecurityScore -= 10;
-        else if (severity === 'medium') calcSecurityScore -= 5;
-        else calcSecurityScore -= 2;
+      const calculatedScores = computePassportScores({
+        licenseType: body.licenseType ?? existing.licenseType,
+        fileHash: body.fileHash ?? existing.fileHash,
+        publisher: body.publisher ?? existing.publisher,
+        isPublisherVerified: false,
+        sbom: currentSbom,
+        vulnerabilities: currentVulnerabilities,
+        evidence: currentEvidence,
       });
-      calcSecurityScore = Math.max(10, Math.min(100, calcSecurityScore));
+      const calcSecurityScore = calculatedScores.securityScore;
 
       // Only VERIFIED/PARTIALLY_VERIFIED count toward compliance score — and validateBody()
       // above has already rejected any item claiming those statuses without a full
       // checksum + chain-of-custody + verifierEngineId + verifiedAt evidence record.
-      const verifiedEvidence = currentEvidence.filter((e: any) =>
-        e.status === 'VERIFIED' || e.status === 'PARTIALLY_VERIFIED'
-      ).length;
-      let calcComplianceScore = 75 + (verifiedEvidence * 5);
-      calcComplianceScore = Math.max(50, Math.min(100, calcComplianceScore));
-
-      const calcOverallScore = Math.round((calcSecurityScore + calcComplianceScore + 90) / 3);
+      const calcComplianceScore = calculatedScores.complianceScore;
+      const calcOverallScore = calculatedScores.overallScore;
 
       // 3. Track updates in the timeline
       if (body.vulnerabilities !== undefined || body.evidence !== undefined || body.name !== undefined || body.version !== undefined) {
@@ -2242,7 +2273,7 @@ async function startServer() {
             date: timestamp,
             event: 'Passport Updated',
             user: req.user!.email,
-            details: `Passport audit parameters modified. Security: ${calcSecurityScore}/100, Compliance: ${calcComplianceScore}/100, Overall: ${calcOverallScore}/100.`
+            details: 'Persisted passport fields were updated. Trust scores remain evidence-derived.'
           },
           ...currentTimeline
         ];
@@ -2253,12 +2284,12 @@ async function startServer() {
         overallScore: calcOverallScore,
         securityScore: calcSecurityScore,
         complianceScore: calcComplianceScore,
+        vendorReputationScore: calculatedScores.vendorReputationScore,
         timeline: JSON.stringify(currentTimeline)
       };
 
       if (body.name !== undefined) updates.name = body.name;
       if (body.version !== undefined) updates.version = body.version;
-      if (body.vendorReputationScore !== undefined) updates.vendorReputationScore = body.vendorReputationScore;
       if (body.aiSummary !== undefined) updates.aiSummary = body.aiSummary;
       if (body.sbom !== undefined) updates.sbom = JSON.stringify(body.sbom);
       if (body.evidence !== undefined) updates.evidence = JSON.stringify(body.evidence);
@@ -2996,18 +3027,6 @@ async function startServer() {
     }
   });
 
-  // Asynchronous background job processor delegating to our modular 8-engine orchestrator
-  async function processAgentJobInBackground(
-    jobId: string,
-    tenantId: string,
-    agentId: string,
-    passportId: string,
-    userEmail: string
-  ) {
-    // Execute our robust 8-engine scanner pipeline in the background
-    await runComprehensiveScan(passportId, tenantId, jobId, userEmail);
-  }
-
   app.post('/api/agent-jobs', requireAuth, requireRole(['Admin']), validateBody(createAgentJobSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
@@ -3015,6 +3034,39 @@ async function startServer() {
 
       if (!agentId || !passportId) {
         return res.status(400).json({ error: 'agentId and passportId are required' });
+      }
+      if (agentId !== 'osv-worker' || jobType !== 'osv_manifest_scan') {
+        return res.status(400).json({
+          error: 'UNSUPPORTED_SCAN_JOB',
+          message: 'Only persisted OSV manifest scan jobs are accepted by this endpoint.'
+        });
+      }
+
+      const passport = await db.select()
+        .from(passportsTable)
+        .where(and(
+          eq(passportsTable.id, passportId),
+          eq(passportsTable.tenantId, tenantId)
+        ))
+        .then(rows => rows[0]);
+      if (!passport) {
+        return res.status(404).json({ error: 'Passport not found' });
+      }
+
+      const existingJob = await db.select()
+        .from(agentJobsTable)
+        .where(and(
+          eq(agentJobsTable.tenantId, tenantId),
+          eq(agentJobsTable.passportId, passportId),
+          eq(agentJobsTable.jobType, jobType),
+          inArray(agentJobsTable.status, ['Pending', 'Running'])
+        ))
+        .then(rows => rows[0]);
+      if (existingJob) {
+        return res.status(409).json({
+          error: 'SCAN_JOB_ALREADY_ACTIVE',
+          jobId: existingJob.id
+        });
       }
 
       const jobId = `job-${crypto.randomUUID()}`;
@@ -3026,7 +3078,7 @@ async function startServer() {
           tenantId,
           agentId,
           passportId,
-          jobType: jobType || 'automated_compliance_check',
+          jobType,
           status: 'Pending',
           progress: 0,
         })
@@ -3036,12 +3088,9 @@ async function startServer() {
       await db.insert(agentLogsTable).values({
         jobId,
         agentId,
-        message: 'Async AI Job registered in queue. Dispatched background task compiler.',
+        message: 'OSV manifest scan job persisted and awaiting an independent worker.',
         level: 'Info'
       });
-
-      // Dispatch asynchronous background process without awaiting!
-      processAgentJobInBackground(jobId, tenantId, agentId, passportId, req.user!.email);
 
       res.status(201).json(inserted[0]);
     } catch (err) {

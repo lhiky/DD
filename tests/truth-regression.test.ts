@@ -60,3 +60,19 @@ describe('production truth regressions', () => {
     expect(source).toMatch(/const complianceScore = Math\.min\(100, verifiedEvidence \* 20\)/);
   });
 });
+
+describe('independent OSV worker truth boundaries', () => {
+  it('claims persisted jobs with database locking and stores provider evidence as observed', () => {
+    const worker = read('src/workers/osv-worker.ts');
+    expect(worker).toContain('FOR UPDATE SKIP LOCKED');
+    expect(worker).toContain("https://api.osv.dev/v1/query");
+    expect(worker).toContain("'Security Scan', 0, 'api.osv.dev'");
+    expect(worker).toContain("evidenceState: 'Provider response persisted; not a cryptographic verification'");
+  });
+
+  it('does not dispatch the supported OSV job inside the HTTP process', () => {
+    const server = read('server.ts');
+    expect(server).toContain('OSV manifest scan job persisted and awaiting an independent worker.');
+    expect(server).not.toContain('processAgentJobInBackground(jobId');
+  });
+});

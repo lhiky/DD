@@ -267,6 +267,12 @@ export const agentJobs = pgTable('agent_jobs', {
   progress: integer('progress').notNull().default(0),
   result: text('result'), // JSON stringified result or summary
   error: text('error'),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  lockedAt: timestamp('locked_at'),
+  lockedBy: text('locked_by'),
+  nextAttemptAt: timestamp('next_attempt_at').defaultNow(),
+  completedAt: timestamp('completed_at'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -420,4 +426,3 @@ export const workSessionRelations = relations(workSessions, ({ one }) => ({
     references: [appUsers.id],
   }),
 }));
-
