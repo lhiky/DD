@@ -51,6 +51,9 @@ export default function TrustBrainView(_props: { userRole?: string }) {
   const [observation, setObservation] = useState<TrustObservation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [history, setHistory] = useState<any[]>([]);
+  const [comparison, setComparison] = useState<any | null>(null);
+  const [verification, setVerification] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     apiFetch('/api/passports')
@@ -76,11 +79,48 @@ export default function TrustBrainView(_props: { userRole?: string }) {
       const response = await apiFetch(`/api/passports/${encodeURIComponent(selectedId)}/trust-observation`);
       if (!response.ok) throw new Error('Trust observation could not be built.');
       setObservation(await response.json());
+      const historyResponse = await apiFetch(`/api/passports/${encodeURIComponent(selectedId)}/trust-observations?limit=20`);
+      if (!historyResponse.ok) throw new Error('Trust observation history could not be loaded.');
+      const historyBody = await historyResponse.json();
+      setHistory(Array.isArray(historyBody.items) ? historyBody.items : []);
     } catch (err: any) {
       setError(err?.message || 'Trust observation unavailable.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const generateSnapshot = async () => {
+    if (!passportId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await apiFetch(`/api/passports/${encodeURIComponent(passportId)}/trust-observations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `manual:${passportId}:${crypto.randomUUID()}`
+        },
+        body: JSON.stringify({ generationReason: 'manual' })
+      });
+      if (!response.ok) throw new Error('Historical observation could not be generated.');
+      await loadObservation(passportId);
+    } catch (err: any) {
+      setError(err?.message || 'Historical observation generation failed.');
+      setLoading(false);
+    }
+  };
+
+  const compareWithPrevious = async () => {
+    const response = await apiFetch(`/api/passports/${encodeURIComponent(passportId)}/trust-observation-comparison`);
+    if (!response.ok) return setError('Observation comparison could not be loaded.');
+    setComparison(await response.json());
+  };
+
+  const verifySnapshot = async (id: string) => {
+    const response = await apiFetch(`/api/trust-observations/${encodeURIComponent(id)}/verify`, { method: 'POST' });
+    const body = await response.json();
+    setVerification(current => ({ ...current, [id]: response.ok && body.matchesStoredHash === true }));
   };
 
   useEffect(() => {
@@ -198,6 +238,43 @@ export default function TrustBrainView(_props: { userRole?: string }) {
               </section>
             ))}
           </div>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Immutable observation history</h2>
+                <p className="mt-1 text-xs text-slate-500">Historical rows show what SPR reported at their generation time. They are not recalculated from current evidence.</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={compareWithPrevious} disabled={history.length < 2} className="rounded-lg border border-slate-300 px-3 py-2 text-xs disabled:opacity-40 dark:border-zinc-700">Compare latest</button>
+                <button onClick={generateSnapshot} disabled={loading || !passportId} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Generate snapshot</button>
+              </div>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-xs">
+                <thead className="text-slate-500"><tr><th className="p-2">Version</th><th className="p-2">Generated</th><th className="p-2">Reason</th><th className="p-2">Known / Unknown</th><th className="p-2">Completeness</th><th className="p-2">Open findings</th><th className="p-2">Hash</th></tr></thead>
+                <tbody>{history.map(item => (
+                  <tr key={item.id} className="border-t border-slate-100 dark:border-zinc-800">
+                    <td className="p-2 font-semibold">v{item.observationVersion}</td>
+                    <td className="p-2">{new Date(item.generatedAt).toLocaleString()}</td>
+                    <td className="p-2">{item.generationReason}</td>
+                    <td className="p-2">{item.knownDimensionCount} / {item.unknownDimensionCount}</td>
+                    <td className="p-2">{Math.round(item.completeness * 100)}%</td>
+                    <td className="p-2">{item.openFindingCount}</td>
+                    <td className="p-2"><button onClick={() => verifySnapshot(item.id)} className="text-indigo-600 underline">{verification[item.id] ? 'Hash matches' : 'Verify stored hash'}</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            {comparison && (
+              <div className="mt-4 rounded-xl bg-slate-50 p-4 text-xs dark:bg-zinc-950">
+                <strong>Server comparison: v{comparison.previous?.observationVersion ?? '—'} → v{comparison.current.observationVersion}</strong>
+                {comparison.changes.length === 0
+                  ? <p className="mt-2 text-slate-500">No observable change was detected.</p>
+                  : comparison.changes.map((change: any, index: number) => <p key={`${change.type}-${index}`} className="mt-2">{change.subject}: {change.type.replaceAll('_', ' ')}</p>)}
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>

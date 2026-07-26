@@ -105,6 +105,15 @@ export const alerts = pgTable('alerts', {
   previousStatus: text('previous_status'),
   acknowledgedAt: text('acknowledged_at'),
   resolvedAt: text('resolved_at'),
+  clientId: text('client_id'),
+  assetId: text('asset_id'),
+  sourceChangeEventId: text('source_change_event_id'),
+  firstObservationId: text('first_observation_id'),
+  acknowledgedBy: text('acknowledged_by'),
+  resolvedBy: text('resolved_by'),
+  evidenceIds: text('evidence_ids'),
+  findingIds: text('finding_ids'),
+  updatedAt: text('updated_at'),
 });
 
 export const trustObservations = pgTable('trust_observations', {
@@ -128,6 +137,16 @@ export const trustObservations = pgTable('trust_observations', {
   expiredDimensionCount: integer('expired_dimension_count').notNull(),
   canonicalPayloadHash: text('canonical_payload_hash').notNull(),
   immutablePayload: text('immutable_payload').notNull(),
+  generationReason: text('generation_reason').notNull().default('manual'),
+  generatedByActorId: text('generated_by_actor_id'),
+  generatedByActorType: text('generated_by_actor_type').notNull().default('user'),
+  collectorVersionMap: text('collector_version_map').notNull().default('{}'),
+  partiallyKnownDimensionCount: integer('partially_known_dimension_count').notNull().default(0),
+  unavailableDimensionCount: integer('unavailable_dimension_count').notNull().default(0),
+  openFindingCount: integer('open_finding_count').notNull().default(0),
+  persistedFindingCount: integer('persisted_finding_count').notNull().default(0),
+  idempotencyKey: text('idempotency_key'),
+  createdAt: text('created_at').notNull().default(''),
 });
 
 export const trustObservationChanges = pgTable('trust_observation_changes', {
@@ -141,6 +160,13 @@ export const trustObservationChanges = pgTable('trust_observation_changes', {
   deduplicationKey: text('deduplication_key').notNull(),
   details: text('details').notNull(),
   createdAt: text('created_at').notNull(),
+  dimension: text('dimension'),
+  severity: text('severity').notNull().default('informational'),
+  previousValue: text('previous_value').notNull().default('null'),
+  currentValue: text('current_value').notNull().default('null'),
+  evidenceIds: text('evidence_ids').notNull().default('[]'),
+  findingIds: text('finding_ids').notNull().default('[]'),
+  materialityPolicyVersion: text('materiality_policy_version').notNull().default('spr.materiality.v1'),
 });
 
 // 6. Integrations Table (with tenant_id isolation)

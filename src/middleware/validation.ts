@@ -280,6 +280,13 @@ export const createRepositoryScanSchema = z.object({
   }
 });
 
+export const createTrustObservationSchema = z.object({
+  generationReason: z.enum([
+    'manual', 'scheduled_refresh', 'evidence_change',
+    'finding_change', 'collector_recovery', 'system'
+  ]).optional().default('manual')
+}).strict();
+
 // --- AI endpoints ---
 export const analyzePassportSchema = z.object({
   passportId: nonEmptyString

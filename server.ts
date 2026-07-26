@@ -55,6 +55,7 @@ import {
   billingCheckoutSchema,
   createAgentJobSchema,
   createRepositoryConnectionSchema, createRepositoryScanSchema,
+  createTrustObservationSchema,
   analyzePassportSchema, aiAdvisorSchema
 } from './src/middleware/validation.ts';
 import { setUserCustomClaims } from './src/lib/firebase-admin.ts';
@@ -69,7 +70,8 @@ import { buildTrustObservation } from './src/utils/trust-observation.ts';
 import { verifyEvidenceIntegrity } from './src/utils/evidence-integrity.ts';
 import { buildServiceIdentity } from './src/utils/service-identity.ts';
 import {
-  canonicalize, observationHash, compareObservationPayloads, changeDeduplicationKey
+  canonicalize, observationHash, compareObservationPayloads, changeDeduplicationKey,
+  classifyMateriality, MATERIALITY_POLICY_VERSION
 } from './src/utils/observation-history.ts';
 
 // Load environment variables
@@ -2203,7 +2205,16 @@ async function startServer() {
     staleDimensionCount: row.staleDimensionCount,
     expiredDimensionCount: row.expiredDimensionCount,
     canonicalPayloadHash: row.canonicalPayloadHash,
-    immutablePayload: JSON.parse(row.immutablePayload)
+    immutablePayload: JSON.parse(row.immutablePayload),
+    generationReason: row.generationReason,
+    generatedByActorId: row.generatedByActorId,
+    generatedByActorType: row.generatedByActorType,
+    collectorVersionMap: JSON.parse(row.collectorVersionMap),
+    partiallyKnownDimensionCount: row.partiallyKnownDimensionCount,
+    unavailableDimensionCount: row.unavailableDimensionCount,
+    openFindingCount: row.openFindingCount,
+    persistedFindingCount: row.persistedFindingCount,
+    createdAt: row.createdAt
   });
 
   app.get('/api/passports/:id/trust-observations', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -2211,11 +2222,31 @@ async function startServer() {
       eq(passportsTable.id, req.params.id), eq(passportsTable.tenantId, req.user!.tenantId)
     )).then(rows => rows[0]);
     if (!passport) return res.status(404).json({ error: 'Software passport not found' });
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+    const cursor = req.query.cursor ? Number(req.query.cursor) : null;
+    if (req.query.cursor && (!Number.isInteger(cursor) || cursor! < 1)) return res.status(400).json({ error: 'INVALID_CURSOR' });
+    const generationReason = typeof req.query.generationReason === 'string' ? req.query.generationReason : null;
+    const allowedReasons = new Set(['manual', 'scheduled_refresh', 'evidence_change', 'finding_change', 'collector_recovery', 'system']);
+    if (generationReason && !allowedReasons.has(generationReason)) return res.status(400).json({ error: 'INVALID_GENERATION_REASON' });
     const rows = await db.select().from(trustObservationsTable).where(and(
       eq(trustObservationsTable.passportId, passport.id),
-      eq(trustObservationsTable.tenantId, req.user!.tenantId)
-    )).orderBy(desc(trustObservationsTable.observationVersion));
-    res.json(rows.map(parseObservationRow));
+      eq(trustObservationsTable.tenantId, req.user!.tenantId),
+      cursor ? sql`${trustObservationsTable.observationVersion} < ${cursor}` : undefined,
+      generationReason ? eq(trustObservationsTable.generationReason, generationReason) : undefined
+    )).orderBy(desc(trustObservationsTable.observationVersion)).limit(limit + 1);
+    const page = rows.slice(0, limit);
+    res.json({
+      items: page.map(row => ({
+        id: row.id, passportId: row.passportId, observationVersion: row.observationVersion,
+        generationReason: row.generationReason, generatedAt: row.generatedAt,
+        previousObservationId: row.previousObservationId, completeness: row.completeness / 10_000,
+        knownDimensionCount: row.knownDimensionCount, partiallyKnownDimensionCount: row.partiallyKnownDimensionCount,
+        unknownDimensionCount: row.unknownDimensionCount, staleDimensionCount: row.staleDimensionCount,
+        expiredDimensionCount: row.expiredDimensionCount, unavailableDimensionCount: row.unavailableDimensionCount,
+        openFindingCount: row.openFindingCount, canonicalPayloadHash: row.canonicalPayloadHash
+      })),
+      nextCursor: rows.length > limit ? page.at(-1)?.observationVersion || null : null
+    });
   });
 
   app.get('/api/passports/:id/trust-observations/:observationId', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -2228,9 +2259,27 @@ async function startServer() {
     res.json(parseObservationRow(row));
   });
 
-  app.post('/api/passports/:id/trust-observations', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+  app.get('/api/passports/:id/trust-observations/:observationId/changes', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const observation = await db.select({ id: trustObservationsTable.id }).from(trustObservationsTable).where(and(
+      eq(trustObservationsTable.id, req.params.observationId),
+      eq(trustObservationsTable.passportId, req.params.id),
+      eq(trustObservationsTable.tenantId, req.user!.tenantId)
+    )).then(rows => rows[0]);
+    if (!observation) return res.status(404).json({ error: 'Trust observation not found' });
+    const changes = await db.select().from(trustObservationChangesTable).where(and(
+      eq(trustObservationChangesTable.observationId, observation.id),
+      eq(trustObservationChangesTable.tenantId, req.user!.tenantId)
+    )).orderBy(trustObservationChangesTable.createdAt);
+    res.json(changes);
+  });
+
+  app.post('/api/passports/:id/trust-observations', requireAuth, requireRole(['Admin']), validateBody(createTrustObservationSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
+      const idempotencyKey = req.header('Idempotency-Key')?.trim();
+      if (idempotencyKey && !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+        return res.status(400).json({ error: 'INVALID_IDEMPOTENCY_KEY' });
+      }
       const passport = await db.select().from(passportsTable).where(and(
         eq(passportsTable.id, req.params.id), eq(passportsTable.tenantId, tenantId)
       )).then(rows => rows[0]);
@@ -2261,6 +2310,13 @@ async function startServer() {
       const now = new Date().toISOString();
       const inserted = await db.transaction(async tx => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${tenantId}:${passport.id}:trust-observation`}))`);
+        if (idempotencyKey) {
+          const existing = await tx.select().from(trustObservationsTable).where(and(
+            eq(trustObservationsTable.tenantId, tenantId),
+            eq(trustObservationsTable.idempotencyKey, idempotencyKey)
+          )).then(rows => rows[0]);
+          if (existing) return { row: existing, reused: true };
+        }
         const previous = await tx.select().from(trustObservationsTable).where(and(
           eq(trustObservationsTable.tenantId, tenantId), eq(trustObservationsTable.passportId, passport.id)
         )).orderBy(desc(trustObservationsTable.observationVersion)).limit(1).then(rows => rows[0]);
@@ -2268,6 +2324,20 @@ async function startServer() {
         const changes = compareObservationPayloads(previousPayload, payload);
         const id = `obs-${crypto.randomUUID()}`;
         const states = Object.values(payload.vector) as any[];
+        const historicalPayload = {
+          ...payload,
+          observationIdentity: {
+            id, tenantId, clientId: client.id, assetId: passport.id, passportId: passport.id,
+            observationVersion: (previous?.observationVersion || 0) + 1,
+            generatedAt: now, generationReason: req.body.generationReason,
+            previousObservationId: previous?.id || null
+          },
+          policyVersions: {
+            scoring: payload.scoringPolicy.version,
+            confidence: 'spr.confidence-decay.v1',
+            materiality: MATERIALITY_POLICY_VERSION
+          }
+        };
         const row = (await tx.insert(trustObservationsTable).values({
           id, tenantId, passportId: passport.id, clientId: client.id, assetId: passport.id,
           schemaVersion: payload.schemaVersion, observationVersion: (previous?.observationVersion || 0) + 1,
@@ -2281,25 +2351,48 @@ async function startServer() {
           unknownDimensionCount: payload.unknownLayer.unknownDimensions.length,
           staleDimensionCount: states.filter(item => item.state === 'stale').length,
           expiredDimensionCount: states.filter(item => item.state === 'expired').length,
-          canonicalPayloadHash: observationHash(payload),
-          immutablePayload: canonicalize(payload)
+          canonicalPayloadHash: observationHash(historicalPayload),
+          immutablePayload: canonicalize(historicalPayload),
+          generationReason: req.body.generationReason,
+          generatedByActorId: req.user!.uid,
+          generatedByActorType: 'user',
+          collectorVersionMap: canonicalize(Object.fromEntries([...new Set(evidence.map(item => item.engineId))].sort().map(id => [id, 'recorded-by-evidence-source']))),
+          partiallyKnownDimensionCount: states.filter(item => item.state === 'partially_known').length,
+          unavailableDimensionCount: states.filter(item => item.state === 'unavailable').length,
+          openFindingCount: findings.filter(item => !['Resolved', 'Mitigated'].includes(item.status)).length,
+          persistedFindingCount: findings.length,
+          idempotencyKey: idempotencyKey || null,
+          createdAt: now
         }).returning())[0];
         for (const change of changes) {
           const dedup = changeDeduplicationKey(passport.id, change);
+          const materiality = classifyMateriality(change);
+          const changeId = `change-${crypto.randomUUID()}`;
           await tx.insert(trustObservationChangesTable).values({
-            id: `change-${crypto.randomUUID()}`, tenantId, passportId: passport.id,
+            id: changeId, tenantId, passportId: passport.id,
             observationId: id, previousObservationId: previous?.id || null,
             changeType: change.type, subject: change.subject, deduplicationKey: dedup,
-            details: canonicalize({ before: change.before, after: change.after }), createdAt: now
+            details: canonicalize({ before: change.before, after: change.after }), createdAt: now,
+            dimension: Object.hasOwn(payload.vector, change.subject) ? change.subject : null,
+            severity: materiality.severity,
+            previousValue: canonicalize(change.before),
+            currentValue: canonicalize(change.after),
+            evidenceIds: JSON.stringify(evidence.map(item => item.id).sort()),
+            findingIds: JSON.stringify(findings.map(item => item.id).sort()),
+            materialityPolicyVersion: MATERIALITY_POLICY_VERSION
           });
+          if (!materiality.alertWorthy) continue;
           await tx.execute(sql`
             INSERT INTO alerts
               (id, tenant_id, title, severity, category, client_name, description, timestamp, status,
                passport_id, observation_id, change_type, deduplication_key, first_observed_at,
-               last_observed_at, occurrence_count)
+               last_observed_at, occurrence_count, client_id, asset_id, source_change_event_id,
+               first_observation_id, evidence_ids, finding_ids, updated_at)
             VALUES (${`alert-${crypto.randomUUID()}`}, ${tenantId}, ${`Trust observation change: ${change.type}`},
-              'Info', 'Trust Observation Change', ${client.name}, ${`Observed ${change.type} for ${change.subject}.`},
-              ${now}, 'Active', ${passport.id}, ${id}, ${change.type}, ${dedup}, ${now}, ${now}, 1)
+              ${materiality.severity}, 'Trust Observation Change', ${client.name}, ${`Observed ${change.type} for ${change.subject}.`},
+              ${now}, 'Active', ${passport.id}, ${id}, ${change.type}, ${dedup}, ${now}, ${now}, 1,
+              ${client.id}, ${passport.id}, ${changeId}, ${previous?.id || id}, ${JSON.stringify(evidence.map(item => item.id).sort())},
+              ${JSON.stringify(findings.map(item => item.id).sort())}, ${now})
             ON CONFLICT (tenant_id, deduplication_key) WHERE deduplication_key IS NOT NULL
             DO UPDATE SET
               last_observed_at = EXCLUDED.last_observed_at,
@@ -2309,10 +2402,10 @@ async function startServer() {
               occurrence_count = CASE WHEN alerts.status = 'Resolved' THEN alerts.occurrence_count + 1 ELSE alerts.occurrence_count END
           `);
         }
-        return row;
+        return { row, reused: false };
       });
-      await addAuditLogBlock(req.user!.email, 'Trust Observation Generated', req.ip || '127.0.0.1', 'Success', `Observation ${inserted.id} generated for passport ${passport.id}`, tenantId);
-      res.status(201).json(parseObservationRow(inserted));
+      if (!inserted.reused) await addAuditLogBlock(req.user!.email, 'Trust Observation Generated', req.ip || '127.0.0.1', 'Success', `Observation ${inserted.row.id} generated for passport ${passport.id}`, tenantId);
+      res.status(inserted.reused ? 200 : 201).json({ ...parseObservationRow(inserted.row), idempotencyReused: inserted.reused });
     } catch (err) {
       trackAndLogError(err, `POST /api/passports/${req.params.id}/trust-observations`);
       res.status(500).json({ error: 'Failed to generate trust observation' });
@@ -2320,15 +2413,43 @@ async function startServer() {
   });
 
   app.get('/api/passports/:id/trust-observation-comparison', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const requestedIds = [req.query.from, req.query.to].filter((value): value is string => typeof value === 'string');
+    if (requestedIds.some(id => !/^obs-[0-9a-f-]{36}$/.test(id))) return res.status(400).json({ error: 'INVALID_OBSERVATION_ID' });
     const rows = await db.select().from(trustObservationsTable).where(and(
       eq(trustObservationsTable.passportId, req.params.id),
-      eq(trustObservationsTable.tenantId, req.user!.tenantId)
+      eq(trustObservationsTable.tenantId, req.user!.tenantId),
+      requestedIds.length === 2 ? inArray(trustObservationsTable.id, requestedIds) : undefined
     )).orderBy(desc(trustObservationsTable.observationVersion)).limit(2);
     if (rows.length === 0) return res.status(404).json({ error: 'Trust observation not found' });
+    if (requestedIds.length === 2 && rows.length !== 2) return res.status(404).json({ error: 'Trust observation not found' });
     res.json({
       current: parseObservationRow(rows[0]),
       previous: rows[1] ? parseObservationRow(rows[1]) : null,
       changes: rows[1] ? compareObservationPayloads(JSON.parse(rows[1].immutablePayload), JSON.parse(rows[0].immutablePayload)) : []
+    });
+  });
+
+  app.post('/api/trust-observations/:observationId/verify', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const row = await db.select().from(trustObservationsTable).where(and(
+      eq(trustObservationsTable.id, req.params.observationId),
+      eq(trustObservationsTable.tenantId, req.user!.tenantId)
+    )).then(rows => rows[0]);
+    if (!row) return res.status(404).json({ error: 'Trust observation not found' });
+    const calculated = observationHash(JSON.parse(row.immutablePayload));
+    const matchesStoredHash = crypto.timingSafeEqual(
+      Buffer.from(calculated.replace('sha256:', ''), 'hex'),
+      Buffer.from(row.canonicalPayloadHash.replace('sha256:', ''), 'hex')
+    );
+    await addAuditLogBlock(req.user!.email, 'Trust Observation Hash Verified', req.ip || '127.0.0.1', matchesStoredHash ? 'Success' : 'Fail', `Observation ${row.id} hash comparison completed`, req.user!.tenantId);
+    res.status(matchesStoredHash ? 200 : 409).json({
+      observationId: row.id,
+      hashAlgorithm: 'SHA-256',
+      matchesStoredHash,
+      verifiedAt: new Date().toISOString(),
+      scope: 'stored-observation-payload-integrity-only',
+      statement: matchesStoredHash
+        ? 'The stored observation payload matches its recorded SPR hash. This does not establish that source evidence was truthful.'
+        : 'The stored observation payload does not match its recorded SPR hash.'
     });
   });
 
@@ -2838,7 +2959,17 @@ async function startServer() {
   app.get('/api/alerts', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
-      const rows = await db.select().from(alertsTable).where(eq(alertsTable.tenantId, tenantId));
+      const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+      const state = typeof req.query.state === 'string' ? req.query.state : null;
+      const severity = typeof req.query.severity === 'string' ? req.query.severity : null;
+      const passportId = typeof req.query.passportId === 'string' ? req.query.passportId : null;
+      const rows = await db.select().from(alertsTable).where(and(
+        eq(alertsTable.tenantId, tenantId),
+        state ? eq(alertsTable.status, state) : undefined,
+        severity ? eq(alertsTable.severity, severity) : undefined,
+        passportId ? eq(alertsTable.passportId, passportId) : undefined
+      )).orderBy(desc(alertsTable.timestamp), desc(alertsTable.id)).limit(limit);
+      res.setHeader('X-Result-Limit', String(limit));
       res.json(rows);
     } catch (err) {
       trackAndLogError(err, 'GET /api/alerts');
@@ -2859,9 +2990,14 @@ async function startServer() {
     const rows = await db.update(alertsTable).set({
       previousStatus: sql`${alertsTable.status}`,
       status: 'Acknowledged',
-      acknowledgedAt: now
-    }).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId))).returning();
-    if (rows.length === 0) return res.status(404).json({ error: 'Alert not found' });
+      acknowledgedAt: now,
+      acknowledgedBy: req.user!.uid,
+      updatedAt: now
+    }).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId), eq(alertsTable.status, 'Active'))).returning();
+    if (rows.length === 0) {
+      const exists = await db.select({ id: alertsTable.id }).from(alertsTable).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId))).then(items => items[0]);
+      return res.status(exists ? 409 : 404).json({ error: exists ? 'INVALID_ALERT_STATE_TRANSITION' : 'Alert not found' });
+    }
     await addAuditLogBlock(req.user!.email, 'Alert Acknowledged', req.ip || '127.0.0.1', 'Success', `Alert ${rows[0].id} acknowledged`, req.user!.tenantId);
     res.json(rows[0]);
   });
@@ -2871,9 +3007,14 @@ async function startServer() {
     const rows = await db.update(alertsTable).set({
       previousStatus: sql`${alertsTable.status}`,
       status: 'Resolved',
-      resolvedAt: now
-    }).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId))).returning();
-    if (rows.length === 0) return res.status(404).json({ error: 'Alert not found' });
+      resolvedAt: now,
+      resolvedBy: req.user!.uid,
+      updatedAt: now
+    }).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId), inArray(alertsTable.status, ['Active', 'Acknowledged']))).returning();
+    if (rows.length === 0) {
+      const exists = await db.select({ id: alertsTable.id }).from(alertsTable).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId))).then(items => items[0]);
+      return res.status(exists ? 409 : 404).json({ error: exists ? 'INVALID_ALERT_STATE_TRANSITION' : 'Alert not found' });
+    }
     await addAuditLogBlock(req.user!.email, 'Alert Resolved', req.ip || '127.0.0.1', 'Success', `Alert ${rows[0].id} resolved`, req.user!.tenantId);
     res.json(rows[0]);
   });
