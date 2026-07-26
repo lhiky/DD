@@ -11,6 +11,7 @@
     "worker:dev": "tsx worker.ts",
     "clean": "node -e \"import { rm } from 'fs/promises'; await rm('dist', { recursive: true, force: true }); await rm('server.js', { force: true });\"",
     "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
