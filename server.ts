@@ -629,7 +629,6 @@ async function startServer() {
 
   // 3. Apply API Rate Limiting to all API routes
   app.use('/api', rateLimiter);
-  app.use('/api', createMonitoringRouter());
 
   // Public health and readiness endpoints
   app.get('/health', (_req, res) => {
@@ -679,6 +678,10 @@ async function startServer() {
       timestamp: new Date().toISOString()
     });
   });
+
+  // Monitoring routes authenticate their own requests. Mount them after the
+  // public health route so the router cannot shadow /api/health.
+  app.use('/api', createMonitoringRouter());
 
   // 4. Custom Error Monitoring Middleware
   const trackAndLogError = (err: any, context: string) => {
