@@ -63,6 +63,7 @@ import {
   findDuplicateActiveRepositoryScan,
   REPOSITORY_SCANNER_CONFIGURATION
 } from './src/utils/repository-scan.ts';
+import { buildTrustObservation } from './src/utils/trust-observation.ts';
 
 // Load environment variables
 dotenv.config();
@@ -2154,6 +2155,73 @@ async function startServer() {
     } catch (err) {
       trackAndLogError(err, 'GET /api/passports');
       res.status(500).json({ error: 'Failed to retrieve software passports' });
+    }
+  });
+
+  app.get('/api/passports/:id/trust-observation', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const tenantId = req.user!.tenantId;
+      const passport = await db.select()
+        .from(passportsTable)
+        .where(and(eq(passportsTable.id, req.params.id), eq(passportsTable.tenantId, tenantId)))
+        .then(rows => rows[0]);
+
+      if (!passport) {
+        return res.status(404).json({ error: 'Software passport not found' });
+      }
+
+      const [evidence, findings] = await Promise.all([
+        db.select().from(evidenceItemsTable).where(and(
+          eq(evidenceItemsTable.tenantId, tenantId),
+          eq(evidenceItemsTable.assetId, passport.id)
+        )),
+        db.select().from(scanFindingsTable).where(and(
+          eq(scanFindingsTable.tenantId, tenantId),
+          eq(scanFindingsTable.assetId, passport.id)
+        ))
+      ]);
+
+      const parseArray = (value: string): unknown[] => {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      };
+
+      res.json(buildTrustObservation({
+        passport: {
+          id: passport.id,
+          name: passport.name,
+          version: passport.version,
+          publisher: passport.publisher,
+          fileHash: passport.fileHash,
+          sbom: parseArray(passport.sbom),
+          timeline: parseArray(passport.timeline)
+        },
+        evidence: evidence.map(item => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          status: item.verified === 1 ? 'VERIFIED' : item.verificationFailureReason ? 'FAILED' : 'OBSERVED',
+          source: item.engineId,
+          timestamp: item.timestamp,
+          verificationMethod: item.verified === 1
+            ? `Server-side verification recorded by ${item.engineId}`
+            : `Evidence collected by ${item.engineId}; independent verification not recorded`,
+          failureReason: item.verificationFailureReason
+        })),
+        findings: findings.map(item => ({
+          status: item.status,
+          severity: item.severity,
+          detectedAt: item.detectedAt,
+          engineId: item.engineId
+        }))
+      }));
+    } catch (err) {
+      trackAndLogError(err, `GET /api/passports/${req.params.id}/trust-observation`);
+      res.status(500).json({ error: 'Failed to build trust observation' });
     }
   });
 
