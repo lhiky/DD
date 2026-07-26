@@ -1004,18 +1004,7 @@ export default function App() {
           {activeTab === 'compliance' && <ComplianceView clients={clients} />}
 
           {activeTab === 'trust-brain' && (
-            currentClientTier === 'Premium' ? (
-              <TrustBrainView userRole={userRole} />
-            ) : (
-              <PaywallOverlay
-                featureName="Evidence Brain"
-                featureDescription="Inspect server-generated trust observations, unknown evidence dimensions, immutable history, comparisons, and stored-hash verification."
-                requiredTier="Premium"
-                currentClientId={selectedClientId}
-                clients={clients}
-                onUpgradeSuccess={handleUpgradeSuccess}
-              />
-            )
+            <TrustBrainView userRole={userRole} />
           )}
 
           {activeTab === 'reports' && (
