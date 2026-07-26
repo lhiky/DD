@@ -83,6 +83,17 @@ describe('production truth regressions', () => {
     expect(checklist).not.toContain('sealed cryptographic channel');
     expect(checklist).not.toContain('absolute pilot-readiness');
   });
+
+  it('fails closed when integration verification or patch execution is unavailable', () => {
+    const server = read('server.ts');
+    const app = read('src/App.tsx');
+
+    expect(server).toContain("error: 'AUTOMATED_REMEDIATION_UNAVAILABLE'");
+    expect(server).toContain('Alerts were not changed');
+    expect(server).toContain("error: 'INTEGRATION_VERIFICATION_REQUIRED'");
+    expect(server).not.toContain('Successfully remediated ${activeAlerts.length} active alerts.');
+    expect(app).not.toMatch(/setPassports\(prev => prev\.map\(p => p\.id === updatedPassport\.id \? updatedPassport : p\)\);\s+apiFetch/);
+  });
 });
 
 describe('independent OSV worker truth boundaries', () => {

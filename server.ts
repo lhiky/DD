@@ -2606,78 +2606,10 @@ async function startServer() {
   });
 
   app.post('/api/remediation/run', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
-    try {
-      const tenantId = req.user!.tenantId;
-
-      // 1. Fetch active alerts for this tenant
-      const activeAlerts = await db.select()
-        .from(alertsTable)
-        .where(and(eq(alertsTable.tenantId, tenantId), eq(alertsTable.status, 'Active')));
-
-      if (activeAlerts.length === 0) {
-        return res.json({
-          success: true,
-          message: 'Zero active risks detected. Your trust posture is already pristine!',
-          resolvedCount: 0
-        });
-      }
-
-      // Create a unique job ID for the agentLogsTable so we have real background tracking logs in database!
-      const jobId = `job-remed-${crypto.randomUUID()}`;
-      const agentId = 'security-ai';
-
-      // Insert real job record
-      await db.insert(agentJobsTable).values({
-        id: jobId,
-        tenantId,
-        agentId,
-        passportId: 'all',
-        jobType: 'vulnerability_remediation',
-        status: 'Completed',
-        progress: 100,
-        result: `Successfully remediated ${activeAlerts.length} active alerts.`
-      });
-
-      // Write steps to agentLogsTable
-      await db.insert(agentLogsTable).values({ jobId, agentId, message: 'Initiating Autopilot Remediation Engine...', level: 'Info' });
-      await db.insert(agentLogsTable).values({ jobId, agentId, message: `Discovered ${activeAlerts.length} unresolved threat alerts under tenant ledger.`, level: 'Info' });
-
-      const clientsToRecalculate = new Set<string>();
-
-      for (const alert of activeAlerts) {
-        // Resolve alert
-        await db.update(alertsTable)
-          .set({ status: 'Resolved' })
-          .where(and(eq(alertsTable.id, alert.id), eq(alertsTable.tenantId, tenantId)));
-
-        clientsToRecalculate.add(alert.clientName);
-
-        await db.insert(agentLogsTable).values({
-          jobId,
-          agentId,
-          message: `Marked alert '${alert.title}' as resolved for client '${alert.clientName}'. No patch execution was performed by this job.`,
-          level: 'Info'
-        });
-      }
-
-      // Recalculate metrics for all affected clients
-      for (const clientName of clientsToRecalculate) {
-        await recalculateClientMetrics(tenantId, clientName);
-      }
-
-      await db.insert(agentLogsTable).values({ jobId, agentId, message: 'All client trust scores and metrics successfully recalculated from live database ledger.', level: 'Info' });
-      await db.insert(agentLogsTable).values({ jobId, agentId, message: 'Alert status update job completed. No software patches or compliance certificates were generated.', level: 'Info' });
-
-      res.json({
-        success: true,
-        message: `Marked ${activeAlerts.length} alerts as resolved and recalculated client metrics. No software patches were applied.`,
-        resolvedCount: activeAlerts.length,
-        jobId
-      });
-    } catch (err) {
-      trackAndLogError(err, 'POST /api/remediation/run');
-      res.status(500).json({ error: 'Failed to execute real-time autopilot remediation' });
-    }
+    res.status(501).json({
+      error: 'AUTOMATED_REMEDIATION_UNAVAILABLE',
+      message: 'SPR has no configured patch executor. Alerts were not changed. Review and resolve alerts individually after remediation evidence is available.'
+    });
   });
 
   app.post('/api/alerts', requireAuth, validateBody(createAlertSchema), async (req: AuthenticatedRequest, res) => {
@@ -2727,11 +2659,18 @@ async function startServer() {
       const { id } = req.params;
       const { connected, apiKeyHint, lastSyncDate } = req.body;
 
+      if (connected === true) {
+        return res.status(422).json({
+          error: 'INTEGRATION_VERIFICATION_REQUIRED',
+          message: 'A generic integration record cannot be marked connected without provider verification. Use a provider-specific connection flow.'
+        });
+      }
+
       const updated = await db.update(integrationsTable)
         .set({
-          connected: connected ? 1 : 0,
-          apiKeyHint: apiKeyHint || '',
-          lastSyncDate: lastSyncDate || new Date().toISOString().split('T')[0]
+          connected: 0,
+          apiKeyHint: '',
+          lastSyncDate: lastSyncDate || 'Never'
         })
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.tenantId, tenantId)))
         .returning();

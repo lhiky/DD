@@ -360,7 +360,7 @@ export default function App() {
   };
 
   // State mutator: Toggle Integration Connections
-  const handleToggleConnection = (id: string) => {
+  const handleToggleConnection = async (id: string) => {
     const integration = integrations.find(i => i.id === id);
     if (!integration) return;
 
@@ -371,27 +371,18 @@ export default function App() {
       lastSyncDate: nextState ? new Date().toISOString() : 'Never'
     };
 
-    apiFetch(`/api/integrations/${id}`, {
+    const response = await apiFetch(`/api/integrations/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedData)
-    }).catch(err => console.error('Failed to update integration on backend:', err));
-
-    setIntegrations(prev =>
-      prev.map(item => {
-        if (item.id === id) {
-          triggerNotification(
-            `${item.name} API connection ${nextState ? 'established' : 'severed'}`,
-            'info'
-          );
-          return {
-            ...item,
-            ...updatedData
-          };
-        }
-        return item;
-      })
-    );
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      triggerNotification(body.message || 'Provider verification is required before connecting this integration.', 'info');
+      return;
+    }
+    setIntegrations(prev => prev.map(item => item.id === id ? { ...item, ...body } : item));
+    triggerNotification(`${integration.name} disconnected`, 'info');
   };
 
   const handleSyncIntegration = (id: string) => {
@@ -411,38 +402,38 @@ export default function App() {
     })
       .then(res => {
         if (res.ok) return res.json();
-        throw new Error('Failed to synchronize');
+        return res.json().catch(() => ({})).then(body => {
+          throw new Error(body.message || 'Provider verification is required before synchronization.');
+        });
       })
       .then(updated => {
         setIntegrations(prev => prev.map(item => item.id === id ? { ...item, ...updated } : item));
         triggerNotification(`Successfully synchronized ${integration.name}!`, 'success');
       })
-      .catch(err => console.error('Failed to sync integration on backend:', err));
+      .catch(err => {
+        console.error('Failed to sync integration on backend:', err);
+        triggerNotification(err.message || 'Integration was not synchronized.', 'info');
+      });
   };
 
   // State mutator: Update threat alerts (Snoozed, Resolved)
-  const handleUpdateAlertStatus = (id: string, nextStatus: AlertStatus) => {
-    apiFetch(`/api/alerts/${id}`, {
+  const handleUpdateAlertStatus = async (id: string, nextStatus: AlertStatus) => {
+    const response = await apiFetch(`/api/alerts/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: nextStatus })
-    }).catch(err => console.error('Failed to update alert status on backend:', err));
-
-    setAlerts(prev =>
-      prev.map(a => {
-        if (a.id === id) {
-          triggerNotification(`Alert successfully status changed: ${nextStatus}`, 'success');
-          return { ...a, status: nextStatus };
-        }
-        return a;
-      })
-    );
+    });
+    if (!response.ok) {
+      triggerNotification('Alert status was not saved.', 'info');
+      return;
+    }
+    const savedAlert = await response.json();
+    setAlerts(prev => prev.map(a => a.id === id ? savedAlert : a));
+    triggerNotification(`Alert status saved: ${nextStatus}`, 'success');
   };
 
   // State mutator: Update software passport (for risk mitigations, etc.)
   const handleUpdatePassport = (updatedPassport: SoftwarePassport) => {
-    setPassports(prev => prev.map(p => p.id === updatedPassport.id ? updatedPassport : p));
-    
     apiFetch(`/api/passports/${updatedPassport.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

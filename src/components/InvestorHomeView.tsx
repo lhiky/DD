@@ -109,7 +109,8 @@ export default function InvestorHomeView({
         method: 'POST'
       });
       if (!res.ok) {
-        throw new Error('Remediation run failed');
+        const failure = await res.json().catch(() => ({}));
+        throw new Error(failure.message || 'Remediation run failed');
       }
       const data = await res.json();
       if (data.success) {
@@ -136,9 +137,9 @@ export default function InvestorHomeView({
         // Dispatches global refresh event so App.tsx reloads the entire dataset
         window.dispatchEvent(new CustomEvent('refresh-data'));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setRemediationLogs(['[error] Remediation failed: Please check administrator roles & security logs.']);
+      setRemediationLogs([`[unavailable] ${err?.message || 'No patch executor is configured.'}`]);
       setIsRemediating(false);
     }
   };
