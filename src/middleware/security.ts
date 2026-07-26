@@ -5,7 +5,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { adminAuth, setUserCustomClaims } from '../lib/firebase-admin.ts';
-import { db } from '../db/index.ts';
+import { db, runWithTenantDatabase } from '../db/index.ts';
 import { users } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
 
@@ -220,7 +220,7 @@ export const requireAuth = async (
       emailVerified
     };
 
-    next();
+    runWithTenantDatabase(dbUser.tenantId, next);
   } catch (error: any) {
     console.error('[Security Auth Middleware Error]:', error);
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
