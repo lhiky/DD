@@ -60,6 +60,10 @@ import { setUserCustomClaims } from './src/lib/firebase-admin.ts';
 import { offboardTenantData } from './src/db/sync.ts';
 import { runComprehensiveScan, calculateAndStoreTrustScore, addPostgresAuditLog } from './src/utils/scanner.ts';
 import { probeDatabase } from './src/utils/health.ts';
+import {
+  findDuplicateActiveRepositoryScan,
+  REPOSITORY_SCANNER_CONFIGURATION
+} from './src/utils/repository-scan.ts';
 
 // Load environment variables
 dotenv.config();
@@ -3074,9 +3078,10 @@ async function startServer() {
         eq(agentJobsTable.jobType, 'repository_scan'),
         inArray(agentJobsTable.status, ['Pending', 'Running'])
       ));
-      const duplicate = matchingSources.find(source =>
-        (source.requestedRef || '') === (ref || '') &&
-        activeJobs.some(job => job.id === source.jobId)
+      const duplicate = findDuplicateActiveRepositoryScan(
+        matchingSources,
+        new Set(activeJobs.map(job => job.id)),
+        ref,
       );
       if (duplicate) {
         return res.status(409).json({
@@ -3107,6 +3112,7 @@ async function startServer() {
           repositoryName: repository,
           requestedRef: ref || null,
           repositorySubdirectory: subdirectory,
+          scannerConfiguration: REPOSITORY_SCANNER_CONFIGURATION,
         });
         await tx.insert(agentLogsTable).values({
           jobId,

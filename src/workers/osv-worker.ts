@@ -280,9 +280,15 @@ async function fetchJson(url: string, notFoundCode: string) {
   }
 }
 
-async function downloadArchive(url: string, destination: string) {
+export async function downloadArchive(
+  url: string,
+  destination: string,
+  options: { timeoutMs?: number; maxBytes?: number } = {},
+) {
+  const timeoutMs = options.timeoutMs ?? ACQUISITION_TIMEOUT_MS;
+  const maxBytes = options.maxBytes ?? MAX_ARCHIVE_BYTES;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ACQUISITION_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       headers: { 'user-agent': 'spr-repository-worker/1.0' },
@@ -293,13 +299,13 @@ async function downloadArchive(url: string, destination: string) {
     if (response.status === 403) throw new Error('REPOSITORY_ACCESS_DENIED');
     if (!response.ok || !response.body) throw new Error('REPOSITORY_ACCESS_DENIED');
     const declaredSize = Number(response.headers.get('content-length') || 0);
-    if (declaredSize > MAX_ARCHIVE_BYTES) throw new Error('REPOSITORY_TOO_LARGE');
+    if (declaredSize > maxBytes) throw new Error('REPOSITORY_TOO_LARGE');
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of response.body as any) {
       const buffer = Buffer.from(chunk);
       size += buffer.length;
-      if (size > MAX_ARCHIVE_BYTES) throw new Error('REPOSITORY_TOO_LARGE');
+      if (size > maxBytes) throw new Error('REPOSITORY_TOO_LARGE');
       chunks.push(buffer);
     }
     await writeFile(destination, Buffer.concat(chunks));
@@ -311,7 +317,7 @@ async function downloadArchive(url: string, destination: string) {
   }
 }
 
-async function runBounded(
+export async function runBounded(
   executable: string,
   args: string[],
   timeoutMs: number,
@@ -362,6 +368,49 @@ async function runBounded(
       });
     });
   });
+}
+
+export async function generateRepositorySbom(
+  scanRoot: string,
+  syftPath: string,
+  options: { timeoutMs?: number; executableArgsPrefix?: string[] } = {},
+) {
+  const prefix = options.executableArgsPrefix || [];
+  const versionResult = await runBounded(
+    syftPath,
+    [...prefix, 'version', '-o', 'json'],
+    15_000,
+    1024 * 1024,
+  );
+  if (versionResult.code !== 0 || !versionResult.stdout.toString('utf8').includes(SYFT_VERSION)) {
+    throw new Error('SBOM_GENERATOR_NOT_AVAILABLE');
+  }
+  let result;
+  try {
+    result = await runBounded(
+      syftPath,
+      [...prefix, 'scan', `dir:${scanRoot}`, '-o', 'cyclonedx-json'],
+      options.timeoutMs ?? SBOM_TIMEOUT_MS,
+    );
+  } catch (error: any) {
+    if (error?.message === 'REPOSITORY_ACQUISITION_TIMEOUT') {
+      throw new Error('SBOM_GENERATION_TIMEOUT');
+    }
+    throw error;
+  }
+  if (result.code !== 0) throw new Error('SBOM_GENERATION_FAILED');
+  let document: any;
+  try {
+    document = JSON.parse(result.stdout.toString('utf8'));
+  } catch {
+    throw new Error('SBOM_INVALID');
+  }
+  return {
+    document,
+    components: normalizeCycloneDx(document),
+    raw: result.stdout,
+    exitCode: result.code,
+  };
 }
 
 export function validateArchiveEntries(entries: string[]) {
@@ -488,13 +537,14 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
     };
     const archivePath = path.join(tempRoot, 'repository.zip');
     const extractPath = path.join(tempRoot, 'extracted');
+    const tarExecutable = process.platform === 'win32' ? 'tar.exe' : 'tar';
     await mkdir(extractPath);
     await downloadArchive(`${repoUrl}/zipball/${commitSha}`, archivePath);
-    const listing = await runBounded('tar.exe', ['-tf', archivePath], ACQUISITION_TIMEOUT_MS, 10 * 1024 * 1024);
+    const listing = await runBounded(tarExecutable, ['-tf', archivePath], ACQUISITION_TIMEOUT_MS, 10 * 1024 * 1024);
     if (listing.code !== 0) throw new Error('REPOSITORY_ACQUISITION_FAILED');
     const entries = listing.stdout.toString('utf8').split(/\r?\n/).filter(Boolean);
     validateArchiveEntries(entries);
-    const extraction = await runBounded('tar.exe', ['-xf', archivePath, '-C', extractPath], ACQUISITION_TIMEOUT_MS);
+    const extraction = await runBounded(tarExecutable, ['-xf', archivePath, '-C', extractPath], ACQUISITION_TIMEOUT_MS);
     if (extraction.code !== 0) throw new Error('REPOSITORY_ACQUISITION_FAILED');
     const roots = await readdir(extractPath, { withFileTypes: true });
     const archiveRoot = roots.find(entry => entry.isDirectory());
@@ -510,30 +560,16 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
     if (!scanRootStat?.isDirectory()) throw new Error('REPOSITORY_PATH_INVALID');
     const manifests = await inspectTree(scanRoot);
     const syftPath = await locateSyft();
-    const versionResult = await runBounded(syftPath, ['version', '-o', 'json'], 15_000, 1024 * 1024);
-    if (versionResult.code !== 0 || !versionResult.stdout.toString('utf8').includes(SYFT_VERSION)) {
-      throw new Error('SBOM_GENERATOR_NOT_AVAILABLE');
-    }
-    const syft = await runBounded(
-      syftPath,
-      ['scan', `dir:${scanRoot}`, '-o', 'cyclonedx-json'],
-      SBOM_TIMEOUT_MS,
-    );
+    const generated = await generateRepositorySbom(scanRoot, syftPath);
     const scannerEndedAt = new Date();
-    if (syft.code !== 0) throw new Error('SBOM_GENERATION_FAILED');
-    let sbom: any;
-    try {
-      sbom = JSON.parse(syft.stdout.toString('utf8'));
-    } catch {
-      throw new Error('SBOM_INVALID');
-    }
-    const components = normalizeCycloneDx(sbom);
+    const sbom = generated.document;
+    const components = generated.components;
     const osvComponents = components.filter(component => component.version);
     if (osvComponents.length === 0) throw new Error('SBOM_EMPTY');
     const acquiredAt = new Date();
     const sourceHash = sha256(JSON.stringify(descriptor));
     const manifestHash = sha256(JSON.stringify(manifests));
-    const rawSbomHash = sha256(syft.stdout);
+    const rawSbomHash = sha256(generated.raw);
     const componentsHash = sha256(JSON.stringify(components));
     await pool.query(`
       UPDATE repository_scan_sources SET

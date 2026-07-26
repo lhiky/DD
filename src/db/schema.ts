@@ -358,6 +358,7 @@ export const repositoryScanSources = pgTable('repository_scan_sources', {
   requestedRef: text('requested_ref'),
   resolvedCommitSha: text('resolved_commit_sha'),
   repositorySubdirectory: text('repository_subdirectory').notNull().default(''),
+  scannerConfiguration: text('scanner_configuration').notNull().default('syft:1.49.0:cyclonedx-json+osv:v1'),
   defaultBranch: text('default_branch'),
   visibility: text('visibility'),
   acquiredAt: timestamp('acquired_at'),
