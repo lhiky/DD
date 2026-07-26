@@ -86,7 +86,7 @@ export default function Sidebar({
       activeExtensionsList.push({ id: 'ai-swarm', label: 'Security Worker', icon: Sparkles, badge: 'OSV', animateBadge: false });
     }
     if (installedExtensions.includes('ai-brain')) {
-      activeExtensionsList.push({ id: 'trust-brain', label: 'Trust Brain AI', icon: Brain, badge: 'AI' });
+      activeExtensionsList.push({ id: 'trust-brain', label: 'Evidence Brain', icon: Brain, badge: 'Server' });
     }
     if (installedExtensions.includes('fin-license')) {
       activeExtensionsList.push({ id: 'billing', label: 'Billing & Tokens', icon: CreditCard });

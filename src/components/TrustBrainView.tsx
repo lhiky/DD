@@ -45,7 +45,7 @@ interface TrustObservation {
   };
 }
 
-export default function TrustBrainView(_props: { userRole?: string }) {
+export default function TrustBrainView({ userRole }: { userRole?: string }) {
   const [passports, setPassports] = useState<PassportSummary[]>([]);
   const [passportId, setPassportId] = useState('');
   const [observation, setObservation] = useState<TrustObservation | null>(null);
@@ -53,7 +53,8 @@ export default function TrustBrainView(_props: { userRole?: string }) {
   const [error, setError] = useState('');
   const [history, setHistory] = useState<any[]>([]);
   const [comparison, setComparison] = useState<any | null>(null);
-  const [verification, setVerification] = useState<Record<string, boolean>>({});
+  const [verification, setVerification] = useState<Record<string, 'match' | 'mismatch' | 'error'>>({});
+  const canGenerateSnapshot = userRole === 'Admin';
 
   useEffect(() => {
     apiFetch('/api/passports')
@@ -75,12 +76,21 @@ export default function TrustBrainView(_props: { userRole?: string }) {
     setLoading(true);
     setError('');
     setObservation(null);
+    setHistory([]);
+    setComparison(null);
+    setVerification({});
     try {
       const response = await apiFetch(`/api/passports/${encodeURIComponent(selectedId)}/trust-observation`);
-      if (!response.ok) throw new Error('Trust observation could not be built.');
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || body.error || 'Trust observation could not be built.');
+      }
       setObservation(await response.json());
       const historyResponse = await apiFetch(`/api/passports/${encodeURIComponent(selectedId)}/trust-observations?limit=20`);
-      if (!historyResponse.ok) throw new Error('Trust observation history could not be loaded.');
+      if (!historyResponse.ok) {
+        const body = await historyResponse.json().catch(() => ({}));
+        throw new Error(body.message || body.error || 'Trust observation history could not be loaded.');
+      }
       const historyBody = await historyResponse.json();
       setHistory(Array.isArray(historyBody.items) ? historyBody.items : []);
     } catch (err: any) {
@@ -103,7 +113,10 @@ export default function TrustBrainView(_props: { userRole?: string }) {
         },
         body: JSON.stringify({ generationReason: 'manual' })
       });
-      if (!response.ok) throw new Error('Historical observation could not be generated.');
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || body.error || 'Historical observation could not be generated.');
+      }
       await loadObservation(passportId);
     } catch (err: any) {
       setError(err?.message || 'Historical observation generation failed.');
@@ -112,15 +125,31 @@ export default function TrustBrainView(_props: { userRole?: string }) {
   };
 
   const compareWithPrevious = async () => {
-    const response = await apiFetch(`/api/passports/${encodeURIComponent(passportId)}/trust-observation-comparison`);
-    if (!response.ok) return setError('Observation comparison could not be loaded.');
-    setComparison(await response.json());
+    setError('');
+    try {
+      const response = await apiFetch(`/api/passports/${encodeURIComponent(passportId)}/trust-observation-comparison`);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || body.error || 'Observation comparison could not be loaded.');
+      setComparison(body);
+    } catch (err: any) {
+      setError(err?.message || 'Observation comparison could not be loaded.');
+    }
   };
 
   const verifySnapshot = async (id: string) => {
-    const response = await apiFetch(`/api/trust-observations/${encodeURIComponent(id)}/verify`, { method: 'POST' });
-    const body = await response.json();
-    setVerification(current => ({ ...current, [id]: response.ok && body.matchesStoredHash === true }));
+    setError('');
+    try {
+      const response = await apiFetch(`/api/trust-observations/${encodeURIComponent(id)}/verify`, { method: 'POST' });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || body.error || 'Stored hash verification failed.');
+      setVerification(current => ({
+        ...current,
+        [id]: body.matchesStoredHash === true ? 'match' : 'mismatch'
+      }));
+    } catch (err: any) {
+      setVerification(current => ({ ...current, [id]: 'error' }));
+      setError(err?.message || 'Stored hash verification failed.');
+    }
   };
 
   useEffect(() => {
@@ -136,7 +165,7 @@ export default function TrustBrainView(_props: { userRole?: string }) {
           <div>
             <div className="flex items-center gap-2">
               <Brain className="h-6 w-6 text-indigo-500" />
-              <h1 className="text-xl font-bold">AI Brain — Evidence View</h1>
+              <h1 className="text-xl font-bold">Evidence Brain — Server Observation View</h1>
             </div>
             <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">
               This view does not generate trust. It displays the server-side observation record and its unknown areas.
@@ -247,7 +276,14 @@ export default function TrustBrainView(_props: { userRole?: string }) {
               </div>
               <div className="flex gap-2">
                 <button onClick={compareWithPrevious} disabled={history.length < 2} className="rounded-lg border border-slate-300 px-3 py-2 text-xs disabled:opacity-40 dark:border-zinc-700">Compare latest</button>
-                <button onClick={generateSnapshot} disabled={loading || !passportId} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Generate snapshot</button>
+                <button
+                  onClick={generateSnapshot}
+                  disabled={loading || !passportId || !canGenerateSnapshot}
+                  title={canGenerateSnapshot ? 'Persist a new server-generated observation' : 'Admin role required'}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                >
+                  {canGenerateSnapshot ? 'Generate snapshot' : 'Admin required'}
+                </button>
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
@@ -261,7 +297,14 @@ export default function TrustBrainView(_props: { userRole?: string }) {
                     <td className="p-2">{item.knownDimensionCount} / {item.unknownDimensionCount}</td>
                     <td className="p-2">{Math.round(item.completeness * 100)}%</td>
                     <td className="p-2">{item.openFindingCount}</td>
-                    <td className="p-2"><button onClick={() => verifySnapshot(item.id)} className="text-indigo-600 underline">{verification[item.id] ? 'Hash matches' : 'Verify stored hash'}</button></td>
+                    <td className="p-2">
+                      <button onClick={() => verifySnapshot(item.id)} className="text-indigo-600 underline">
+                        {verification[item.id] === 'match' ? 'Hash matches'
+                          : verification[item.id] === 'mismatch' ? 'Hash mismatch'
+                          : verification[item.id] === 'error' ? 'Verification error'
+                          : 'Verify stored hash'}
+                      </button>
+                    </td>
                   </tr>
                 ))}</tbody>
               </table>

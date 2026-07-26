@@ -26,7 +26,9 @@ describe('production truth regressions', () => {
       source.indexOf('// 4. Future Marketplace States')
     );
     expect(handler).toMatch(/apiFetch\('\/api\/ai\/advisor'/);
-    expect(handler).toMatch(/finally[\s\S]*setIsAdvisorLoading\(false\)[\s\S]*return;/);
+    expect(handler).toMatch(/finally[\s\S]*setIsAdvisorLoading\(false\)/);
+    expect(handler).not.toContain('setTimeout');
+    expect(handler).not.toContain('87% ready');
   });
 
   it('does not label local self-passport evidence as verified', () => {
@@ -97,6 +99,8 @@ describe('production truth regressions', () => {
 
   it('backs AI Brain and AI Swarm with supported server operations only', () => {
     const brain = read('src/components/TrustBrainView.tsx');
+    const marketplace = read('src/components/ExtensionMarketplace.tsx');
+    const trustOs = read('src/components/TrustOSView.tsx');
     const swarm = read('src/components/PassportSwarmView.tsx');
     const dashboard = read('src/components/DashboardView.tsx');
     const scans = read('src/components/ScansView.tsx');
@@ -105,6 +109,12 @@ describe('production truth regressions', () => {
     expect(brain).toContain('/trust-observation');
     expect(brain).toContain('Unknown dimensions');
     expect(brain).not.toContain('overallScore: 96');
+    expect(brain).toContain('Evidence Brain — Server Observation View');
+    expect(brain).toContain('Admin required');
+    expect(marketplace).not.toContain('Trust Brain Cognitive Patching');
+    expect(marketplace).not.toContain('automatically write and propose code-level security fixes');
+    expect(trustOs).not.toContain('I continuously track and analyze your software universe');
+    expect(trustOs).not.toContain('Based on our current technology rating, we are **87% ready**');
     expect(swarm).toContain("agentId: 'osv-worker'");
     expect(swarm).toContain("jobType: 'osv_manifest_scan'");
     expect(swarm).not.toContain('automated_integrity_audit');

@@ -1008,8 +1008,8 @@ export default function App() {
               <TrustBrainView userRole={userRole} />
             ) : (
               <PaywallOverlay
-                featureName="Trust Brain Cognitive Engine"
-                featureDescription="Ingest entire code bases, software bill of materials, and CVE definitions to automatically resolve vulnerabilities and generate ready-to-merge patches."
+                featureName="Evidence Brain"
+                featureDescription="Inspect server-generated trust observations, unknown evidence dimensions, immutable history, comparisons, and stored-hash verification."
                 requiredTier="Premium"
                 currentClientId={selectedClientId}
                 clients={clients}

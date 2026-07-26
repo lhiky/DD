@@ -229,7 +229,7 @@ export default function ExtensionMarketplace({
       purpose: 'Deploy continuous, autonomous agents that collaborate, identify zero-day software threats, and verify trust protocols autonomously.',
       permissions: ['AgentSwarm.Spawn', 'AutonomousAction.Trigger', 'CodePatch.Propose'],
       dataSources: ['Sovereign Agent Communication Fabric', 'Active application code graphs'],
-      dependencies: ['Vulnerability Intelligence', 'Trust Brain Cognitive Patching'],
+      dependencies: ['Vulnerability Intelligence', 'Evidence Brain Observations'],
       version: '5.0.1',
       publisher: 'SPR AI Operations',
       trustRating: 'Trusted',
@@ -246,24 +246,22 @@ export default function ExtensionMarketplace({
     },
     {
       id: 'ai-brain',
-      name: 'Trust Brain Cognitive Patching',
+      name: 'Evidence Brain Observations',
       category: 'AI',
-      purpose: 'State-of-the-art AI reasoning engine to ingest whole-project vulnerability contexts and automatically write and propose code-level security fixes.',
-      permissions: ['Codebase.Write', 'PullRequest.Create', 'KnowledgeBase.Search'],
-      dataSources: ['Gemini Enterprise reasoning models', 'Repository files'],
-      dependencies: ['Vulnerability Intelligence'],
-      version: '3.0.0',
-      publisher: 'SPR AI Operations',
+      purpose: 'Build deterministic server-side trust observations from persisted passport, evidence, and finding records. Numeric trust scoring and AI-generated remediation are not enabled.',
+      permissions: ['Passports.Read', 'Evidence.Read', 'TrustObservations.Create'],
+      dataSources: ['SPR PostgreSQL passport records', 'Persisted evidence items', 'Persisted scan findings'],
+      dependencies: ['Trust Observation Engine'],
+      version: '1.0.0',
+      publisher: 'SPR Core',
       trustRating: 'Trusted',
       updateHistory: [
-        { version: '3.0.0', date: '2026-07-20', change: 'Initial Release of the Trust Brain Cognitive system powered by Gemini.' }
+        { version: '1.0.0', date: '2026-07-26', change: 'Added deterministic observation history, comparison, and stored-hash verification.' }
       ],
-      activityLog: [
-        { time: '10 mins ago', event: 'Analyzed dependency tree and identified remediating package versions for active CVE-2026-1191.', status: 'success' }
-      ],
+      activityLog: [],
       unlockedTabs: ['trust-brain'],
       icon: Sparkles,
-      popularity: '96%'
+      popularity: 'Unrated'
     },
     {
       id: 'exec-board',

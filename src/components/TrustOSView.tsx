@@ -368,12 +368,7 @@ export default function TrustOSView({ passports, clients, selectedClientId }: Tr
 
   // 3. Floating Trust Advisor State
   const [advisorQuery, setAdvisorQuery] = useState('');
-  const [advisorResponses, setAdvisorResponses] = useState<{ query: string; reply: string }[]>([
-    {
-      query: 'I know your software environment. Ask me anything.',
-      reply: 'Hello! I am the SPR Trust Advisor. I continuously track and analyze your software universe, vendor stability index, and compliance records. Feel free to ask me anything about your digital infrastructure.'
-    }
-  ]);
+  const [advisorResponses, setAdvisorResponses] = useState<{ query: string; reply: string }[]>([]);
   const [isAdvisorLoading, setIsAdvisorLoading] = useState(false);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
 
@@ -410,33 +405,6 @@ export default function TrustOSView({ passports, clients, selectedClientId }: Tr
     } finally {
       setIsAdvisorLoading(false);
     }
-    return;
-
-    /* Removed from execution: legacy canned advisor response block.
-    // Simulate smart analytical reply from the Trust Advisor based on the specific prompt
-    setTimeout(() => {
-      let responseText = '';
-      const q = queryText.toLowerCase();
-
-      if (q.includes('audit')) {
-        responseText = 'Based on our current technology rating, we are **87% ready** for an audit. To achieve 100% compliance:\n\n1. **Upgrade OpenSSL Library** to v3.1.2 immediately to resolve the critical CVE-2026-9914 security vulnerability.\n2. **Review OpenAI GPT-4 API** configuration to ensure client conversation data is fully opted-out of model training.\n3. **De-authorize unused developer access keys** in AWS Cloud Run.';
-      } else if (q.includes('replace') || q.includes('software should we')) {
-        responseText = 'We recommend checking **OpenSSL Library** (Dependency) and **OpenAI GPT-4 API** (AI System):\n\n- **OpenSSL Library**: Needs immediate patch or replacement of the vulnerable module.\n- **OpenAI GPT-4 API**: Currently flagged as *Needs Review* due to data policy. Consider replacing with a self-hosted sovereign model inside our secure AWS instance if compliance rules forbid third-party API processing.';
-      } else if (q.includes('vendor') || q.includes('risky')) {
-        responseText = 'Our continuous vendor risk assessment highlights:\n\n1. **OpenAI GPT-4** (🟡 Needs Review): Transmits prompt data to third-party servers. Recommended to negotiate an enterprise SLA.\n2. **OpenSSL** (🔴 Risk Identified): Though an open-source dependency rather than a paid SaaS vendor, it currently exposes postgres connections to buffer overflow.';
-      } else if (q.includes('exposed') || q.includes('exposure')) {
-        responseText = 'Our current structural exposure lies in **OpenSSL Library v3.1.1** which secures **PostgreSQL DB** and **AWS Cloud Run**. Because this library is vulnerable, transit tunnels connecting Stripe and PostgreSQL are potentially exposed to decryption. Upgrading this library is your highest security priority.';
-      } else {
-        responseText = `Based on our Software Universe analysis for ${activeClientName}, the technology layer is 87% compliant. No other outstanding network hazard vectors are detected. I am continuously monitoring code integrity signatures on the backend.`;
-      }
-
-      setAdvisorResponses(prev => [
-        ...prev,
-        { query: queryText, reply: responseText }
-      ]);
-      setIsAdvisorLoading(false);
-    }, 1200);
-    */
   };
 
   // 4. Future Marketplace States
