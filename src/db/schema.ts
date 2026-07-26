@@ -51,6 +51,7 @@ export const clients = pgTable('clients', {
 export const passports = pgTable('passports', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().default('tenant-default'), // Tenant isolation key
+  clientId: text('client_id'),
   name: text('name').notNull(),
   version: text('version').notNull(),
   publisher: text('publisher').notNull(),
@@ -94,6 +95,52 @@ export const alerts = pgTable('alerts', {
   description: text('description').notNull(),
   timestamp: text('timestamp').notNull(),
   status: text('status').notNull().default('Active'),
+  passportId: text('passport_id'),
+  observationId: text('observation_id'),
+  changeType: text('change_type'),
+  deduplicationKey: text('deduplication_key'),
+  firstObservedAt: text('first_observed_at'),
+  lastObservedAt: text('last_observed_at'),
+  occurrenceCount: integer('occurrence_count').notNull().default(1),
+  previousStatus: text('previous_status'),
+  acknowledgedAt: text('acknowledged_at'),
+  resolvedAt: text('resolved_at'),
+});
+
+export const trustObservations = pgTable('trust_observations', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  passportId: text('passport_id').notNull(),
+  clientId: text('client_id').notNull(),
+  assetId: text('asset_id').notNull(),
+  schemaVersion: text('schema_version').notNull(),
+  observationVersion: integer('observation_version').notNull(),
+  generatedAt: text('generated_at').notNull(),
+  previousObservationId: text('previous_observation_id'),
+  evidenceIds: text('evidence_ids').notNull(),
+  findingIds: text('finding_ids').notNull(),
+  scoringPolicyVersion: text('scoring_policy_version').notNull(),
+  confidencePolicyVersion: text('confidence_policy_version').notNull(),
+  completeness: integer('completeness_basis_points').notNull(),
+  knownDimensionCount: integer('known_dimension_count').notNull(),
+  unknownDimensionCount: integer('unknown_dimension_count').notNull(),
+  staleDimensionCount: integer('stale_dimension_count').notNull(),
+  expiredDimensionCount: integer('expired_dimension_count').notNull(),
+  canonicalPayloadHash: text('canonical_payload_hash').notNull(),
+  immutablePayload: text('immutable_payload').notNull(),
+});
+
+export const trustObservationChanges = pgTable('trust_observation_changes', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  passportId: text('passport_id').notNull(),
+  observationId: text('observation_id').notNull(),
+  previousObservationId: text('previous_observation_id'),
+  changeType: text('change_type').notNull(),
+  subject: text('subject').notNull(),
+  deduplicationKey: text('deduplication_key').notNull(),
+  details: text('details').notNull(),
+  createdAt: text('created_at').notNull(),
 });
 
 // 6. Integrations Table (with tenant_id isolation)

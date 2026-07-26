@@ -181,6 +181,7 @@ export const evidenceItemSchema = z.object({
 
 // --- Passports ---
 export const createPassportSchema = z.object({
+  clientId: nonEmptyString.optional(),
   name: nonEmptyString,
   version: nonEmptyString,
   publisher: nonEmptyString,

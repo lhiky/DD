@@ -33,6 +33,8 @@ import {
   scanFindings as scanFindingsTable,
   repositoryConnections as repositoryConnectionsTable,
   repositoryScanSources as repositoryScanSourcesTable,
+  trustObservations as trustObservationsTable,
+  trustObservationChanges as trustObservationChangesTable,
   pilotOrganizations as pilotOrganizationsTable,
   pilotApplications as pilotApplicationsTable
 } from './src/db/schema.ts';
@@ -66,6 +68,9 @@ import {
 import { buildTrustObservation } from './src/utils/trust-observation.ts';
 import { verifyEvidenceIntegrity } from './src/utils/evidence-integrity.ts';
 import { buildServiceIdentity } from './src/utils/service-identity.ts';
+import {
+  canonicalize, observationHash, compareObservationPayloads, changeDeduplicationKey
+} from './src/utils/observation-history.ts';
 
 // Load environment variables
 dotenv.config();
@@ -2178,6 +2183,155 @@ async function startServer() {
     }
   });
 
+  const parseObservationRow = (row: typeof trustObservationsTable.$inferSelect) => ({
+    id: row.id,
+    tenantId: row.tenantId,
+    passportId: row.passportId,
+    clientId: row.clientId,
+    assetId: row.assetId,
+    schemaVersion: row.schemaVersion,
+    observationVersion: row.observationVersion,
+    generatedAt: row.generatedAt,
+    previousObservationId: row.previousObservationId,
+    evidenceIds: JSON.parse(row.evidenceIds),
+    findingIds: JSON.parse(row.findingIds),
+    scoringPolicyVersion: row.scoringPolicyVersion,
+    confidencePolicyVersion: row.confidencePolicyVersion,
+    completeness: row.completeness / 10_000,
+    knownDimensionCount: row.knownDimensionCount,
+    unknownDimensionCount: row.unknownDimensionCount,
+    staleDimensionCount: row.staleDimensionCount,
+    expiredDimensionCount: row.expiredDimensionCount,
+    canonicalPayloadHash: row.canonicalPayloadHash,
+    immutablePayload: JSON.parse(row.immutablePayload)
+  });
+
+  app.get('/api/passports/:id/trust-observations', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const passport = await db.select({ id: passportsTable.id }).from(passportsTable).where(and(
+      eq(passportsTable.id, req.params.id), eq(passportsTable.tenantId, req.user!.tenantId)
+    )).then(rows => rows[0]);
+    if (!passport) return res.status(404).json({ error: 'Software passport not found' });
+    const rows = await db.select().from(trustObservationsTable).where(and(
+      eq(trustObservationsTable.passportId, passport.id),
+      eq(trustObservationsTable.tenantId, req.user!.tenantId)
+    )).orderBy(desc(trustObservationsTable.observationVersion));
+    res.json(rows.map(parseObservationRow));
+  });
+
+  app.get('/api/passports/:id/trust-observations/:observationId', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const row = await db.select().from(trustObservationsTable).where(and(
+      eq(trustObservationsTable.id, req.params.observationId),
+      eq(trustObservationsTable.passportId, req.params.id),
+      eq(trustObservationsTable.tenantId, req.user!.tenantId)
+    )).then(rows => rows[0]);
+    if (!row) return res.status(404).json({ error: 'Trust observation not found' });
+    res.json(parseObservationRow(row));
+  });
+
+  app.post('/api/passports/:id/trust-observations', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+    try {
+      const tenantId = req.user!.tenantId;
+      const passport = await db.select().from(passportsTable).where(and(
+        eq(passportsTable.id, req.params.id), eq(passportsTable.tenantId, tenantId)
+      )).then(rows => rows[0]);
+      if (!passport) return res.status(404).json({ error: 'Software passport not found' });
+      if (!passport.clientId) return res.status(409).json({ error: 'PASSPORT_CLIENT_NOT_ASSOCIATED' });
+      const client = await db.select().from(clientsTable).where(and(
+        eq(clientsTable.id, passport.clientId), eq(clientsTable.tenantId, tenantId)
+      )).then(rows => rows[0]);
+      if (!client) return res.status(409).json({ error: 'PASSPORT_CLIENT_NOT_ASSOCIATED' });
+
+      const [evidence, findings] = await Promise.all([
+        db.select().from(evidenceItemsTable).where(and(eq(evidenceItemsTable.tenantId, tenantId), eq(evidenceItemsTable.assetId, passport.id))),
+        db.select().from(scanFindingsTable).where(and(eq(scanFindingsTable.tenantId, tenantId), eq(scanFindingsTable.assetId, passport.id)))
+      ]);
+      const parseArray = (value: string) => { try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; } };
+      const generated = buildTrustObservation({
+        passport: { id: passport.id, name: passport.name, version: passport.version, publisher: passport.publisher, fileHash: passport.fileHash, sbom: parseArray(passport.sbom), timeline: parseArray(passport.timeline) },
+        evidence: evidence.map(item => ({
+          id: item.id, name: item.name, type: item.type,
+          status: item.verified === 1 ? 'PARTIALLY_VERIFIED' : item.verificationFailureReason ? 'FAILED' : 'OBSERVED',
+          source: item.engineId, timestamp: item.timestamp,
+          verificationMethod: item.verified === 1 ? 'Server-side SHA-256 payload integrity verification; semantic truth was not verified' : `Evidence collected by ${item.engineId}; independent verification not recorded`,
+          failureReason: item.verificationFailureReason
+        })),
+        findings: findings.map(item => ({ status: item.status, severity: item.severity, detectedAt: item.detectedAt, engineId: item.engineId }))
+      });
+      const payload = { ...generated, findings: findings.map(item => ({ id: item.id, status: item.status, severity: item.severity, detectedAt: item.detectedAt, engineId: item.engineId })) };
+      const now = new Date().toISOString();
+      const inserted = await db.transaction(async tx => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${tenantId}:${passport.id}:trust-observation`}))`);
+        const previous = await tx.select().from(trustObservationsTable).where(and(
+          eq(trustObservationsTable.tenantId, tenantId), eq(trustObservationsTable.passportId, passport.id)
+        )).orderBy(desc(trustObservationsTable.observationVersion)).limit(1).then(rows => rows[0]);
+        const previousPayload = previous ? JSON.parse(previous.immutablePayload) : null;
+        const changes = compareObservationPayloads(previousPayload, payload);
+        const id = `obs-${crypto.randomUUID()}`;
+        const states = Object.values(payload.vector) as any[];
+        const row = (await tx.insert(trustObservationsTable).values({
+          id, tenantId, passportId: passport.id, clientId: client.id, assetId: passport.id,
+          schemaVersion: payload.schemaVersion, observationVersion: (previous?.observationVersion || 0) + 1,
+          generatedAt: now, previousObservationId: previous?.id || null,
+          evidenceIds: JSON.stringify(evidence.map(item => item.id).sort()),
+          findingIds: JSON.stringify(findings.map(item => item.id).sort()),
+          scoringPolicyVersion: payload.scoringPolicy.version,
+          confidencePolicyVersion: 'spr.confidence-decay.v1',
+          completeness: Math.round(payload.unknownLayer.completeness * 10_000),
+          knownDimensionCount: payload.unknownLayer.knownDimensions.length,
+          unknownDimensionCount: payload.unknownLayer.unknownDimensions.length,
+          staleDimensionCount: states.filter(item => item.state === 'stale').length,
+          expiredDimensionCount: states.filter(item => item.state === 'expired').length,
+          canonicalPayloadHash: observationHash(payload),
+          immutablePayload: canonicalize(payload)
+        }).returning())[0];
+        for (const change of changes) {
+          const dedup = changeDeduplicationKey(passport.id, change);
+          await tx.insert(trustObservationChangesTable).values({
+            id: `change-${crypto.randomUUID()}`, tenantId, passportId: passport.id,
+            observationId: id, previousObservationId: previous?.id || null,
+            changeType: change.type, subject: change.subject, deduplicationKey: dedup,
+            details: canonicalize({ before: change.before, after: change.after }), createdAt: now
+          });
+          await tx.execute(sql`
+            INSERT INTO alerts
+              (id, tenant_id, title, severity, category, client_name, description, timestamp, status,
+               passport_id, observation_id, change_type, deduplication_key, first_observed_at,
+               last_observed_at, occurrence_count)
+            VALUES (${`alert-${crypto.randomUUID()}`}, ${tenantId}, ${`Trust observation change: ${change.type}`},
+              'Info', 'Trust Observation Change', ${client.name}, ${`Observed ${change.type} for ${change.subject}.`},
+              ${now}, 'Active', ${passport.id}, ${id}, ${change.type}, ${dedup}, ${now}, ${now}, 1)
+            ON CONFLICT (tenant_id, deduplication_key) WHERE deduplication_key IS NOT NULL
+            DO UPDATE SET
+              last_observed_at = EXCLUDED.last_observed_at,
+              observation_id = EXCLUDED.observation_id,
+              previous_status = alerts.status,
+              status = CASE WHEN alerts.status = 'Resolved' THEN 'Active' ELSE alerts.status END,
+              occurrence_count = CASE WHEN alerts.status = 'Resolved' THEN alerts.occurrence_count + 1 ELSE alerts.occurrence_count END
+          `);
+        }
+        return row;
+      });
+      await addAuditLogBlock(req.user!.email, 'Trust Observation Generated', req.ip || '127.0.0.1', 'Success', `Observation ${inserted.id} generated for passport ${passport.id}`, tenantId);
+      res.status(201).json(parseObservationRow(inserted));
+    } catch (err) {
+      trackAndLogError(err, `POST /api/passports/${req.params.id}/trust-observations`);
+      res.status(500).json({ error: 'Failed to generate trust observation' });
+    }
+  });
+
+  app.get('/api/passports/:id/trust-observation-comparison', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const rows = await db.select().from(trustObservationsTable).where(and(
+      eq(trustObservationsTable.passportId, req.params.id),
+      eq(trustObservationsTable.tenantId, req.user!.tenantId)
+    )).orderBy(desc(trustObservationsTable.observationVersion)).limit(2);
+    if (rows.length === 0) return res.status(404).json({ error: 'Trust observation not found' });
+    res.json({
+      current: parseObservationRow(rows[0]),
+      previous: rows[1] ? parseObservationRow(rows[1]) : null,
+      changes: rows[1] ? compareObservationPayloads(JSON.parse(rows[1].immutablePayload), JSON.parse(rows[0].immutablePayload)) : []
+    });
+  });
+
   app.get('/api/passports/:id/trust-observation', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
@@ -2323,10 +2477,16 @@ async function startServer() {
   app.post('/api/passports', requireAuth, requireRole(['Admin']), validateBody(createPassportSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
-      const { name, version, publisher, category, licenseType } = req.body;
+      const { clientId, name, version, publisher, category, licenseType } = req.body;
 
       if (!name || !version || !publisher) {
         return res.status(400).json({ error: 'Name, version, and publisher are required' });
+      }
+      if (clientId) {
+        const client = await db.select({ id: clientsTable.id }).from(clientsTable).where(and(
+          eq(clientsTable.id, clientId), eq(clientsTable.tenantId, tenantId)
+        )).then(rows => rows[0]);
+        if (!client) return res.status(404).json({ error: 'Client not found' });
       }
 
       const newId = `pass-${crypto.randomUUID()}`;
@@ -2362,6 +2522,7 @@ async function startServer() {
         .values({
           id: newId,
           tenantId,
+          clientId: clientId || null,
           name,
           version,
           publisher,
@@ -2683,6 +2844,38 @@ async function startServer() {
       trackAndLogError(err, 'GET /api/alerts');
       res.status(500).json({ error: 'Failed to retrieve alerts' });
     }
+  });
+
+  app.get('/api/alerts/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const row = await db.select().from(alertsTable).where(and(
+      eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId)
+    )).then(rows => rows[0]);
+    if (!row) return res.status(404).json({ error: 'Alert not found' });
+    res.json(row);
+  });
+
+  app.post('/api/alerts/:id/acknowledge', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+    const now = new Date().toISOString();
+    const rows = await db.update(alertsTable).set({
+      previousStatus: sql`${alertsTable.status}`,
+      status: 'Acknowledged',
+      acknowledgedAt: now
+    }).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId))).returning();
+    if (rows.length === 0) return res.status(404).json({ error: 'Alert not found' });
+    await addAuditLogBlock(req.user!.email, 'Alert Acknowledged', req.ip || '127.0.0.1', 'Success', `Alert ${rows[0].id} acknowledged`, req.user!.tenantId);
+    res.json(rows[0]);
+  });
+
+  app.post('/api/alerts/:id/resolve', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+    const now = new Date().toISOString();
+    const rows = await db.update(alertsTable).set({
+      previousStatus: sql`${alertsTable.status}`,
+      status: 'Resolved',
+      resolvedAt: now
+    }).where(and(eq(alertsTable.id, req.params.id), eq(alertsTable.tenantId, req.user!.tenantId))).returning();
+    if (rows.length === 0) return res.status(404).json({ error: 'Alert not found' });
+    await addAuditLogBlock(req.user!.email, 'Alert Resolved', req.ip || '127.0.0.1', 'Success', `Alert ${rows[0].id} resolved`, req.user!.tenantId);
+    res.json(rows[0]);
   });
 
   async function recalculateClientMetrics(tenantId: string, clientName: string) {
