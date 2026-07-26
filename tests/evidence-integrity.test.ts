@@ -27,6 +27,19 @@ describe('evidence payload integrity verification', () => {
     });
   });
 
+  it('only accepts the exact persisted UTF-8 byte sequence', () => {
+    const persisted = '{"b":2,"a":1}\n';
+    const digest = `sha256:${crypto.createHash('sha256').update(persisted, 'utf8').digest('hex')}`;
+    const parsedAndReserialized = JSON.stringify(JSON.parse(persisted));
+    const reformatted = JSON.stringify(JSON.parse(persisted), null, 2);
+    const withoutNewline = persisted.slice(0, -1);
+
+    expect(verifyEvidenceIntegrity(persisted, digest).outcome).toBe('verified');
+    expect(verifyEvidenceIntegrity(parsedAndReserialized, digest).failureReason).toBe('SHA256_MISMATCH');
+    expect(verifyEvidenceIntegrity(reformatted, digest).failureReason).toBe('SHA256_MISMATCH');
+    expect(verifyEvidenceIntegrity(withoutNewline, digest).failureReason).toBe('SHA256_MISMATCH');
+  });
+
   it('rejects invalid digests and oversized payloads', () => {
     expect(verifyEvidenceIntegrity('value', 'not-a-hash').failureReason).toBe('INVALID_STORED_SHA256');
     expect(verifyEvidenceIntegrity('x'.repeat(MAX_EVIDENCE_VERIFICATION_BYTES + 1), '0'.repeat(64)))

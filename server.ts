@@ -65,6 +65,7 @@ import {
 } from './src/utils/repository-scan.ts';
 import { buildTrustObservation } from './src/utils/trust-observation.ts';
 import { verifyEvidenceIntegrity } from './src/utils/evidence-integrity.ts';
+import { buildServiceIdentity } from './src/utils/service-identity.ts';
 
 // Load environment variables
 dotenv.config();
@@ -675,8 +676,10 @@ async function startServer() {
         outcome,
         details
       });
+      return true;
     } catch (err) {
       console.error('[addAuditLogBlock error]', err);
+      return false;
     }
   };
 
@@ -2256,14 +2259,6 @@ async function startServer() {
       if (!item) return res.status(404).json({ error: 'Evidence item not found' });
 
       const result = verifyEvidenceIntegrity(item.rawContent, item.hash);
-      if (result.outcome === 'rejected') {
-        return res.status(413).json({
-          evidenceId: item.id,
-          scope: 'payload-integrity-only',
-          ...result
-        });
-      }
-
       await db.update(evidenceItemsTable)
         .set({
           verified: result.verified ? 1 : 0,
@@ -2271,7 +2266,7 @@ async function startServer() {
         })
         .where(and(eq(evidenceItemsTable.id, item.id), eq(evidenceItemsTable.tenantId, tenantId)));
 
-      await addAuditLogBlock(
+      const auditEventPersisted = await addAuditLogBlock(
         req.user!.email,
         'Evidence Payload Integrity Checked',
         req.ip || '127.0.0.1',
@@ -2279,8 +2274,16 @@ async function startServer() {
         `Evidence ${item.id}: ${result.outcome}; scope=payload-integrity-only`,
         tenantId
       );
+      if (!auditEventPersisted) {
+        return res.status(500).json({
+          error: 'EVIDENCE_AUDIT_PERSISTENCE_FAILED',
+          evidenceId: item.id,
+          scope: 'payload-integrity-only',
+          resultPersisted: true
+        });
+      }
 
-      res.status(result.verified ? 200 : 409).json({
+      res.status(result.outcome === 'rejected' ? 413 : result.verified ? 200 : 409).json({
         evidenceId: item.id,
         assetId: item.assetId,
         source: item.engineId,
@@ -2291,6 +2294,8 @@ async function startServer() {
         statement: result.verified
           ? 'Payload bytes match the stored digest. This does not verify the semantic truth of the evidence.'
           : 'Payload bytes do not match the stored digest.',
+        resultPersisted: true,
+        auditEventPersisted,
         ...result
       });
     } catch (err) {
@@ -3205,6 +3210,129 @@ async function startServer() {
     }
   );
 
+  app.get('/api/repository-scans/:jobId/report', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const tenantId = req.user!.tenantId;
+      const job = await db.select().from(agentJobsTable).where(and(
+        eq(agentJobsTable.id, req.params.jobId),
+        eq(agentJobsTable.tenantId, tenantId),
+        eq(agentJobsTable.jobType, 'repository_scan')
+      )).then(rows => rows[0]);
+      const source = await db.select().from(repositoryScanSourcesTable).where(and(
+        eq(repositoryScanSourcesTable.jobId, req.params.jobId),
+        eq(repositoryScanSourcesTable.tenantId, tenantId)
+      )).then(rows => rows[0]);
+      if (!job || !source) return res.status(404).json({ error: 'Repository scan not found' });
+
+      const evidence = await db.select().from(evidenceItemsTable).where(and(
+        eq(evidenceItemsTable.assetId, job.passportId),
+        eq(evidenceItemsTable.tenantId, tenantId)
+      ));
+      const findings = await db.select().from(scanFindingsTable).where(and(
+        eq(scanFindingsTable.jobId, job.id),
+        eq(scanFindingsTable.tenantId, tenantId)
+      ));
+      const manifests = JSON.parse(source.manifestPaths || '[]');
+      const components = JSON.parse(source.normalizedComponents || '[]');
+      const osvEvidence = evidence.filter(item => item.engineId === 'osv-worker');
+      const sbomEvidence = evidence.find(item => item.name === 'Syft CycloneDX SBOM summary');
+      const lockfilePattern = /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Pipfile\.lock|gradle\.lockfile|packages\.lock\.json|Cargo\.lock|Gemfile\.lock|composer\.lock)$/;
+      const integrityState = (item: typeof evidence[number]) =>
+        item.verified === 1 ? 'PARTIALLY_VERIFIED' : item.verificationFailureReason ? 'FAILED' : 'OBSERVED';
+
+      res.json({
+        reportVersion: '1',
+        state: job.status === 'Failed' ? 'FAILED' : job.status === 'Completed' ? 'OBSERVED' : 'NOT_OBSERVED',
+        repository: {
+          provider: source.provider,
+          owner: source.repositoryOwner,
+          name: source.repositoryName,
+          exactCommitSha: source.resolvedCommitSha,
+          requestedRef: source.requestedRef,
+          subdirectory: source.repositorySubdirectory || null,
+          scanStartedAt: source.scannerStartedAt,
+          scanCompletedAt: source.scannerEndedAt
+        },
+        inventory: {
+          manifestPaths: manifests,
+          lockfilePaths: manifests.filter((item: string) => lockfilePattern.test(item)),
+          unsupported: ['Files and ecosystems outside SPR manifest discovery are NOT_OBSERVED.'],
+          acquisitionLimitations: [
+            'Public GitHub repositories only for this connection mode.',
+            'Archive acquisition is bounded by time, compressed size, extracted size, and file count.'
+          ]
+        },
+        sbom: {
+          generator: source.scannerName,
+          generatorVersion: source.scannerVersion,
+          format: 'CycloneDX JSON',
+          componentCount: components.length,
+          componentsWithKnownVersions: components.filter((item: any) => item.version).length,
+          componentsWithUnknownVersions: components.filter((item: any) => !item.version).length,
+          digest: source.rawSbomHash ? `sha256:${source.rawSbomHash}` : null,
+          integrityVerification: sbomEvidence ? integrityState(sbomEvidence) : 'NOT_OBSERVED'
+        },
+        vulnerabilities: {
+          provider: 'OSV',
+          queryCount: osvEvidence.length,
+          rawEvidenceCount: osvEvidence.length,
+          findingCount: findings.length,
+          findings: findings.map(item => ({
+            severity: item.severity || 'NOT_OBSERVED',
+            packageName: item.component?.split('@')[0] || null,
+            observedVersion: item.component?.includes('@') ? item.component.slice(item.component.lastIndexOf('@') + 1) : null,
+            vulnerabilityIdentifier: item.title,
+            fixedVersion: item.fixedVersion || null,
+            observationTimestamp: item.detectedAt,
+            state: 'OBSERVED'
+          }))
+        },
+        evidence: evidence.map(item => ({
+          id: item.id,
+          type: item.type,
+          state: integrityState(item),
+          scope: item.verified === 1 ? 'payload-integrity-only' : null,
+          timestamp: item.timestamp,
+          failureReason: item.verificationFailureReason
+        })),
+        explanation: 'PARTIALLY_VERIFIED means the stored evidence payload passed byte-integrity verification. It does not prove the external source was correct, complete, or truthful.',
+        temporaryRepositoryFilesRemoved: source.temporaryDirectoryRemoved === 1,
+        error: job.error
+      });
+    } catch (err) {
+      trackAndLogError(err, `GET /api/repository-scans/${req.params.jobId}/report`);
+      res.status(500).json({ error: 'Failed to build repository scan report' });
+    }
+  });
+
+  app.get('/api/operations/queue-health', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+    const tenantId = req.user!.tenantId;
+    const jobs = await db.select().from(agentJobsTable)
+      .where(eq(agentJobsTable.tenantId, tenantId));
+    const cutoff = Date.now() - 15 * 60 * 1000;
+    const stuck = jobs.filter(job =>
+      ['Pending', 'Running'].includes(job.status) &&
+      new Date(job.updatedAt || job.createdAt || 0).getTime() < cutoff
+    );
+    res.json({
+      state: stuck.length > 0 ? 'UNAVAILABLE' : 'OBSERVED',
+      queueDepth: jobs.filter(job => job.status === 'Pending').length,
+      running: jobs.filter(job => job.status === 'Running').length,
+      failed: jobs.filter(job => job.status === 'Failed').length,
+      stuckThresholdSeconds: 900,
+      stuckJobs: stuck.map(job => ({
+        id: job.id,
+        status: job.status,
+        updatedAt: job.updatedAt,
+        lockedBy: job.lockedBy || null
+      })),
+      workerActivity: jobs
+        .filter(job => job.updatedAt)
+        .sort((a, b) => new Date(b.updatedAt!).getTime() - new Date(a.updatedAt!).getTime())[0]?.updatedAt || null,
+      statement: 'Worker activity is inferred from persisted job updates; this endpoint does not claim a live worker heartbeat.'
+    });
+  });
+
   app.get('/api/agent-jobs', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
@@ -3545,6 +3673,13 @@ Generate a short, high-quality, and highly structured advisory response (using c
       message: err?.message || 'An error occurred during API processing.',
       timestamp: new Date().toISOString()
     });
+  });
+
+  app.get('/', (_req, res) => {
+    res.status(200).json(buildServiceIdentity(
+      process.env.NODE_ENV || 'development',
+      process.env.SPR_VERSION || process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown'
+    ));
   });
 
   // 404 Fallback for unmatched /api routes: Ensures API callers always receive structured JSON, never HTML SPA index

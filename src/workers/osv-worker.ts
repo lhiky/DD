@@ -117,7 +117,7 @@ async function persistProviderResult(
     receivedAt: timestamp,
     response: providerResponse,
   });
-  const digest = crypto.createHash('sha256').update(persistedPayload).digest('hex');
+  const digest = `sha256:${crypto.createHash('sha256').update(persistedPayload, 'utf8').digest('hex')}`;
   await client.query(`
     INSERT INTO evidence_items
       (id, tenant_id, asset_id, name, type, verified, signer, timestamp, hash,
@@ -623,9 +623,9 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
               'Syft 1.49.0', $4, $11, $12, 'repository-worker')
     `, [
       `ev-repo-${crypto.randomUUID()}`, job.tenant_id, job.passport_id,
-      acquiredAt.toISOString(), sourceHash, JSON.stringify(descriptor),
-      `ev-manifest-${crypto.randomUUID()}`, manifestHash, JSON.stringify(manifests),
-      `ev-sbom-${crypto.randomUUID()}`, sha256(sbomEvidencePayload),
+      acquiredAt.toISOString(), `sha256:${sourceHash}`, JSON.stringify(descriptor),
+      `ev-manifest-${crypto.randomUUID()}`, `sha256:${manifestHash}`, JSON.stringify(manifests),
+      `ev-sbom-${crypto.randomUUID()}`, `sha256:${sha256(sbomEvidencePayload)}`,
       sbomEvidencePayload,
     ]);
     await processJob(pool, job);

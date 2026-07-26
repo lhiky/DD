@@ -128,8 +128,35 @@ describe('independent OSV worker truth boundaries', () => {
 
   it('hashes the exact evidence payload that the worker persists', () => {
     const worker = read('src/workers/osv-worker.ts');
-    expect(worker).toContain("const digest = crypto.createHash('sha256').update(persistedPayload).digest('hex')");
-    expect(worker).toContain('sha256(sbomEvidencePayload)');
+    expect(worker).toContain("const digest = `sha256:${crypto.createHash('sha256').update(persistedPayload, 'utf8').digest('hex')}`");
+    expect(worker).toContain('`sha256:${sha256(sbomEvidencePayload)}`');
     expect(worker).not.toContain("`ev-sbom-${crypto.randomUUID()}`, rawSbomHash");
+  });
+
+  it('persists rejected oversized integrity attempts and their audit outcome', () => {
+    const server = read('server.ts');
+    const route = server.slice(
+      server.indexOf("app.post('/api/evidence/:id/verify-integrity'"),
+      server.indexOf("app.post('/api/passports'", server.indexOf("app.post('/api/evidence/:id/verify-integrity'"))
+    );
+    expect(route.indexOf('db.update(evidenceItemsTable)')).toBeLessThan(route.indexOf("result.outcome === 'rejected'"));
+    expect(route).toContain('auditEventPersisted');
+    expect(route).toContain("EVIDENCE_AUDIT_PERSISTENCE_FAILED");
+    expect(route).toContain("? 413");
+  });
+
+  it('keeps repository and OSV scanning out of the HTTP process', () => {
+    const server = read('server.ts');
+    expect(server).toContain('Repository scan request persisted and awaiting an independent worker.');
+    expect(server).not.toContain('processRepositoryJob(');
+    expect(server).not.toContain('fetchOsv(');
+  });
+
+  it('publishes tenant-scoped repository reports using controlled evidence states', () => {
+    const server = read('server.ts');
+    expect(server).toContain("'/api/repository-scans/:jobId/report'");
+    expect(server).toContain('eq(repositoryScanSourcesTable.tenantId, tenantId)');
+    expect(server).toContain('PARTIALLY_VERIFIED means the stored evidence payload passed byte-integrity verification.');
+    expect(server).not.toMatch(/Fully secure|Completely safe|Certified secure|Guaranteed compliant|100% trusted|AI verified|Unhackable/);
   });
 });
