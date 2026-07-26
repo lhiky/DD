@@ -310,15 +310,16 @@ export default function App() {
   };
   
   // Navigation & Context Selector States
-  const [selectedClientId, setSelectedClientId] = useState<string>('global');
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [selectedPassportId, setSelectedPassportId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string>('client-spr-workspace');
+  const [activeTab, setActiveTab] = useState<string>('ai-swarm');
+  const [selectedPassportId, setSelectedPassportId] = useState<string | null>('pass-spr-repository');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Dynamic Modular Extension States
   const [installedExtensions, setInstalledExtensions] = useState<string[]>([
     'sec-vuln',
+    'ai-swarm',
     'ai-brain',
     'comp-soc2',
     'exec-board',
@@ -949,8 +950,7 @@ export default function App() {
           )}
 
           {activeTab === 'ai-swarm' && (
-            currentClientTier === 'Premium' ? (
-              <div className="space-y-6">
+            <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                   <div>
                     <h1 className="text-xl font-display font-bold text-slate-900">Passport Worker Console</h1>
@@ -980,17 +980,7 @@ export default function App() {
                     No Software Passports available to run AI Swarms on.
                   </div>
                 )}
-              </div>
-            ) : (
-              <PaywallOverlay
-                featureName="Passport Scanner Pipeline"
-                featureDescription="Run configured server-side checks and review their recorded findings. Continuous monitoring and signing require connected providers."
-                requiredTier="Premium"
-                currentClientId={selectedClientId}
-                clients={clients}
-                onUpgradeSuccess={handleUpgradeSuccess}
-              />
-            )
+            </div>
           )}
 
           {activeTab === 'vendors' && (

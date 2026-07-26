@@ -101,6 +101,7 @@ describe('production truth regressions', () => {
     const brain = read('src/components/TrustBrainView.tsx');
     const marketplace = read('src/components/ExtensionMarketplace.tsx');
     const trustOs = read('src/components/TrustOSView.tsx');
+    const app = read('src/App.tsx');
     const swarm = read('src/components/PassportSwarmView.tsx');
     const dashboard = read('src/components/DashboardView.tsx');
     const scans = read('src/components/ScansView.tsx');
@@ -115,6 +116,9 @@ describe('production truth regressions', () => {
     expect(marketplace).not.toContain('automatically write and propose code-level security fixes');
     expect(trustOs).not.toContain('I continuously track and analyze your software universe');
     expect(trustOs).not.toContain('Based on our current technology rating, we are **87% ready**');
+    expect(app).toContain("useState<string>('client-spr-workspace')");
+    expect(app).toContain("useState<string>('ai-swarm')");
+    expect(app).toContain("useState<string | null>('pass-spr-repository')");
     expect(swarm).toContain("agentId: 'osv-worker'");
     expect(swarm).toContain("jobType: 'osv_manifest_scan'");
     expect(swarm).not.toContain('automated_integrity_audit');
