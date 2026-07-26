@@ -32,6 +32,8 @@ import {
   auditTrail as auditTrailTable,
   evidenceItems as evidenceItemsTable,
   scanFindings as scanFindingsTable,
+  repositoryConnections as repositoryConnectionsTable,
+  repositoryScanSources as repositoryScanSourcesTable,
   pilotOrganizations as pilotOrganizationsTable,
   pilotApplications as pilotApplicationsTable
 } from './src/db/schema.ts';
@@ -51,6 +53,7 @@ import {
   updateIntegrationSchema,
   billingCheckoutSchema,
   createAgentJobSchema,
+  createRepositoryConnectionSchema, createRepositoryScanSchema,
   analyzePassportSchema, aiAdvisorSchema
 } from './src/middleware/validation.ts';
 import { setUserCustomClaims } from './src/lib/firebase-admin.ts';
@@ -2998,6 +3001,124 @@ async function startServer() {
   });
 
   // REST API Endpoints: AI Agent System Async Jobs
+  app.get('/api/repository-connections', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const rows = await db.select({
+      id: repositoryConnectionsTable.id,
+      provider: repositoryConnectionsTable.provider,
+      installationId: repositoryConnectionsTable.installationId,
+      label: repositoryConnectionsTable.label,
+      accessMode: repositoryConnectionsTable.accessMode,
+      status: repositoryConnectionsTable.status,
+      createdAt: repositoryConnectionsTable.createdAt,
+    }).from(repositoryConnectionsTable)
+      .where(eq(repositoryConnectionsTable.tenantId, req.user!.tenantId));
+    res.json(rows);
+  });
+
+  app.post(
+    '/api/repository-connections',
+    requireAuth,
+    requireRole(['Admin']),
+    validateBody(createRepositoryConnectionSchema),
+    async (req: AuthenticatedRequest, res) => {
+      const id = `repo-conn-${crypto.randomUUID()}`;
+      const inserted = await db.insert(repositoryConnectionsTable).values({
+        id,
+        tenantId: req.user!.tenantId,
+        provider: req.body.provider,
+        installationId: req.body.installationId,
+        label: req.body.label,
+        accessMode: 'public',
+        status: 'Active',
+      }).returning();
+      res.status(201).json(inserted[0]);
+    }
+  );
+
+  app.post(
+    '/api/repository-scans',
+    requireAuth,
+    requireRole(['Admin']),
+    validateBody(createRepositoryScanSchema),
+    async (req: AuthenticatedRequest, res) => {
+      const tenantId = req.user!.tenantId;
+      const { provider, owner, repository, ref, connectionId } = req.body;
+      const subdirectory = (req.body.subdirectory || '').replaceAll('\\', '/').replace(/^\.?\//, '');
+      const connection = await db.select()
+        .from(repositoryConnectionsTable)
+        .where(and(
+          eq(repositoryConnectionsTable.id, connectionId),
+          eq(repositoryConnectionsTable.tenantId, tenantId),
+          eq(repositoryConnectionsTable.provider, provider),
+          eq(repositoryConnectionsTable.status, 'Active')
+        ))
+        .then(rows => rows[0]);
+      if (!connection) {
+        return res.status(404).json({ error: 'REPOSITORY_CONNECTION_NOT_FOUND' });
+      }
+      if (connection.accessMode !== 'public') {
+        return res.status(403).json({ error: 'REPOSITORY_ACCESS_DENIED' });
+      }
+
+      const matchingSources = await db.select()
+        .from(repositoryScanSourcesTable)
+        .where(and(
+          eq(repositoryScanSourcesTable.tenantId, tenantId),
+          eq(repositoryScanSourcesTable.provider, provider),
+          eq(repositoryScanSourcesTable.repositoryOwner, owner),
+          eq(repositoryScanSourcesTable.repositoryName, repository),
+          eq(repositoryScanSourcesTable.repositorySubdirectory, subdirectory)
+        ));
+      const activeJobs = await db.select().from(agentJobsTable).where(and(
+        eq(agentJobsTable.tenantId, tenantId),
+        eq(agentJobsTable.jobType, 'repository_scan'),
+        inArray(agentJobsTable.status, ['Pending', 'Running'])
+      ));
+      const duplicate = matchingSources.find(source =>
+        (source.requestedRef || '') === (ref || '') &&
+        activeJobs.some(job => job.id === source.jobId)
+      );
+      if (duplicate) {
+        return res.status(409).json({
+          error: 'SCAN_JOB_ALREADY_ACTIVE',
+          jobId: duplicate.jobId
+        });
+      }
+
+      const jobId = `job-repo-${crypto.randomUUID()}`;
+      const sourceId = `repo-source-${crypto.randomUUID()}`;
+      await db.transaction(async tx => {
+        await tx.insert(agentJobsTable).values({
+          id: jobId,
+          tenantId,
+          agentId: 'repository-worker',
+          passportId: sourceId,
+          jobType: 'repository_scan',
+          status: 'Pending',
+          progress: 0,
+        });
+        await tx.insert(repositoryScanSourcesTable).values({
+          id: sourceId,
+          jobId,
+          tenantId,
+          connectionId,
+          provider,
+          repositoryOwner: owner,
+          repositoryName: repository,
+          requestedRef: ref || null,
+          repositorySubdirectory: subdirectory,
+        });
+        await tx.insert(agentLogsTable).values({
+          jobId,
+          agentId: 'repository-worker',
+          message: 'Repository scan request persisted and awaiting an independent worker.',
+          level: 'Info'
+        });
+      });
+      res.status(202).json({ jobId, status: 'Pending' });
+    }
+  );
+
   app.get('/api/agent-jobs', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;

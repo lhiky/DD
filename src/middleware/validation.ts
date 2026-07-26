@@ -247,6 +247,38 @@ export const createAgentJobSchema = z.object({
   jobType: z.string().trim().optional()
 });
 
+export const createRepositoryConnectionSchema = z.object({
+  provider: z.literal('github'),
+  installationId: nonEmptyString,
+  label: nonEmptyString
+}).strict();
+
+const repositorySegment = z.string().trim()
+  .min(1)
+  .max(100)
+  .regex(/^[A-Za-z0-9_.-]+$/);
+
+export const createRepositoryScanSchema = z.object({
+  provider: z.literal('github'),
+  owner: repositorySegment,
+  repository: repositorySegment,
+  ref: z.string().trim().min(1).max(255).optional(),
+  subdirectory: z.string().trim().max(500).optional().default(''),
+  connectionId: nonEmptyString
+}).strict().superRefine((value, ctx) => {
+  const subdirectory = value.subdirectory.replaceAll('\\', '/');
+  if (
+    subdirectory.startsWith('/') ||
+    subdirectory.split('/').some(segment => segment === '..' || segment === '.')
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['subdirectory'],
+      message: 'REPOSITORY_PATH_INVALID'
+    });
+  }
+});
+
 // --- AI endpoints ---
 export const analyzePassportSchema = z.object({
   passportId: nonEmptyString

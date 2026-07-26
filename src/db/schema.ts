@@ -336,6 +336,50 @@ export const scanFindings = pgTable('scan_findings', {
   engineId: text('engine_id').notNull(), // Module that discovered it
 });
 
+export const repositoryConnections = pgTable('repository_connections', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  provider: text('provider').notNull(),
+  installationId: text('installation_id').notNull(),
+  label: text('label').notNull(),
+  accessMode: text('access_mode').notNull().default('public'),
+  status: text('status').notNull().default('Active'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const repositoryScanSources = pgTable('repository_scan_sources', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().unique(),
+  tenantId: text('tenant_id').notNull(),
+  connectionId: text('connection_id').notNull(),
+  provider: text('provider').notNull(),
+  repositoryOwner: text('repository_owner').notNull(),
+  repositoryName: text('repository_name').notNull(),
+  requestedRef: text('requested_ref'),
+  resolvedCommitSha: text('resolved_commit_sha'),
+  repositorySubdirectory: text('repository_subdirectory').notNull().default(''),
+  defaultBranch: text('default_branch'),
+  visibility: text('visibility'),
+  acquiredAt: timestamp('acquired_at'),
+  sourceDescriptorHash: text('source_descriptor_hash'),
+  manifestPaths: text('manifest_paths').notNull().default('[]'),
+  manifestInventoryHash: text('manifest_inventory_hash'),
+  rawSbomHash: text('raw_sbom_hash'),
+  sbomDocument: text('sbom_document'),
+  normalizedComponents: text('normalized_components').notNull().default('[]'),
+  normalizedComponentsHash: text('normalized_components_hash'),
+  finalFindingsHash: text('final_findings_hash'),
+  scannerName: text('scanner_name'),
+  scannerVersion: text('scanner_version'),
+  scannerMode: text('scanner_mode'),
+  scannerStartedAt: timestamp('scanner_started_at'),
+  scannerEndedAt: timestamp('scanner_ended_at'),
+  scannerExitCode: integer('scanner_exit_code'),
+  scannerErrorCategory: text('scanner_error_category'),
+  temporaryDirectoryRemoved: integer('temporary_directory_removed').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // 24. Cryptographic Tamper-Proof Audit Trail Table (Postgres-persisted Ledger blocks)
 export const auditTrail = pgTable('audit_trail', {
   id: serial('id').primaryKey(),
