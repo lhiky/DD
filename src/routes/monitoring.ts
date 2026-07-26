@@ -75,7 +75,31 @@ function publicConfiguration(row: typeof monitoringConfigurations.$inferSelect) 
 
 export function createMonitoringRouter() {
   const router = Router();
+  router.use((req: AuthenticatedRequest, res, next) => {
+    const requestId = typeof req.headers['x-request-id'] === 'string'
+      ? req.headers['x-request-id'].slice(0, 100)
+      : `req_${crypto.randomUUID()}`;
+    res.setHeader('x-request-id', requestId);
+    res.locals.requestId = requestId;
+    next();
+  });
   router.use(requireAuth);
+  router.use((req: AuthenticatedRequest, res, next) => {
+    const approved = new Set(
+      (process.env.MONITORING_ENABLED_TENANT_IDS || '')
+        .split(',').map(value => value.trim()).filter(Boolean),
+    );
+    if (!approved.has(req.user!.tenantId)) {
+      return res.status(404).json({
+        error: {
+          code: 'MONITORING_NOT_ENABLED',
+          message: 'Monitoring is not enabled for this tenant.',
+          requestId: res.locals.requestId,
+        },
+      });
+    }
+    next();
+  });
 
   router.get('/collectors', (_req, res) => {
     res.json(Object.values(COLLECTORS));
