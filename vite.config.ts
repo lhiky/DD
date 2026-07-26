@@ -13,7 +13,7 @@ export default defineConfig(() => {
       },
     },
     build: {
-      outDir: 'dist',
+      outDir: 'dist/client',
       emptyOutDir: true,
       minify: 'esbuild' as const,
       sourcemap: false, // Disables source maps in production to protect raw source code exposure
