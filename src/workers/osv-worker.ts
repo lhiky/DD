@@ -511,14 +511,20 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
   const scannerStartedAt = new Date();
   try {
     const repoUrl = `https://api.github.com/repos/${encodeURIComponent(source.repository_owner)}/${encodeURIComponent(source.repository_name)}`;
-    const metadata = await fetchJson(repoUrl, 'REPOSITORY_NOT_FOUND');
-    if (metadata.private) throw new Error('REPOSITORY_ACCESS_DENIED');
-    const requestedRef = source.requested_ref || metadata.default_branch;
-    const commit = await fetchJson(
-      `${repoUrl}/commits/${encodeURIComponent(requestedRef)}`,
-      'REPOSITORY_REF_NOT_FOUND',
-    );
-    const commitSha = commit?.sha;
+    const suppliedImmutableSha = typeof source.requested_ref === 'string' &&
+      /^[a-f0-9]{40}$/i.test(source.requested_ref);
+    const metadata = suppliedImmutableSha
+      ? null
+      : await fetchJson(repoUrl, 'REPOSITORY_NOT_FOUND');
+    if (metadata?.private) throw new Error('REPOSITORY_ACCESS_DENIED');
+    const requestedRef = source.requested_ref || metadata?.default_branch;
+    if (!requestedRef) throw new Error('REPOSITORY_REF_NOT_FOUND');
+    const commitSha = suppliedImmutableSha
+      ? requestedRef.toLowerCase()
+      : (await fetchJson(
+        `${repoUrl}/commits/${encodeURIComponent(requestedRef)}`,
+        'REPOSITORY_REF_NOT_FOUND',
+      ))?.sha;
     if (typeof commitSha !== 'string' || !/^[a-f0-9]{40}$/i.test(commitSha)) {
       throw new Error('REPOSITORY_REF_NOT_FOUND');
     }
@@ -529,8 +535,8 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
       requestedRef,
       resolvedCommitSha: commitSha,
       subdirectory: source.repository_subdirectory,
-      defaultBranch: metadata.default_branch || null,
-      visibility: metadata.visibility || (metadata.private ? 'private' : 'public'),
+      defaultBranch: metadata?.default_branch || null,
+      visibility: metadata?.visibility || 'public',
       connectionId: source.connection_id,
       tenantId: job.tenant_id,
     };
@@ -538,7 +544,10 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
     const extractPath = path.join(tempRoot, 'extracted');
     const tarExecutable = process.platform === 'win32' ? 'tar.exe' : 'tar';
     await mkdir(extractPath);
-    await downloadArchive(`${repoUrl}/zipball/${commitSha}`, archivePath);
+    await downloadArchive(
+      `https://codeload.github.com/${encodeURIComponent(source.repository_owner)}/${encodeURIComponent(source.repository_name)}/zip/${commitSha}`,
+      archivePath
+    );
     const listing = await runBounded(tarExecutable, ['-tf', archivePath], ACQUISITION_TIMEOUT_MS, 10 * 1024 * 1024);
     if (listing.code !== 0) throw new Error('REPOSITORY_ACQUISITION_FAILED');
     const entries = listing.stdout.toString('utf8').split(/\r?\n/).filter(Boolean);

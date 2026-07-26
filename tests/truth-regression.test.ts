@@ -152,6 +152,14 @@ describe('independent OSV worker truth boundaries', () => {
     expect(server).not.toContain('fetchOsv(');
   });
 
+  it('acquires an already-resolved immutable SHA without a rate-limited metadata lookup', () => {
+    const worker = read('src/workers/osv-worker.ts');
+    expect(worker).toContain('const suppliedImmutableSha');
+    expect(worker).toContain("metadata = suppliedImmutableSha");
+    expect(worker).toContain('https://codeload.github.com/');
+    expect(worker).toContain('/zip/${commitSha}');
+  });
+
   it('publishes tenant-scoped repository reports using controlled evidence states', () => {
     const server = read('server.ts');
     expect(server).toContain("'/api/repository-scans/:jobId/report'");
