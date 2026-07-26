@@ -110,4 +110,11 @@ describe('independent OSV worker truth boundaries', () => {
     expect(server).toContain('OSV manifest scan job persisted and awaiting an independent worker.');
     expect(server).not.toContain('processAgentJobInBackground(jobId');
   });
+
+  it('hashes the exact evidence payload that the worker persists', () => {
+    const worker = read('src/workers/osv-worker.ts');
+    expect(worker).toContain("const digest = crypto.createHash('sha256').update(persistedPayload).digest('hex')");
+    expect(worker).toContain('sha256(sbomEvidencePayload)');
+    expect(worker).not.toContain("`ev-sbom-${crypto.randomUUID()}`, rawSbomHash");
+  });
 });

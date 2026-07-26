@@ -108,11 +108,16 @@ async function persistProviderResult(
   job: ClaimedJob,
   component: Required<Pick<SbomComponent, 'name' | 'version'>> & SbomComponent,
   providerResponse: unknown,
-  rawResponse: string,
 ) {
   const timestamp = new Date().toISOString();
   const evidenceId = `ev-osv-${crypto.randomUUID()}`;
-  const digest = crypto.createHash('sha256').update(rawResponse).digest('hex');
+  const persistedPayload = JSON.stringify({
+    source: 'https://api.osv.dev/v1/query',
+    requestedComponent: component,
+    receivedAt: timestamp,
+    response: providerResponse,
+  });
+  const digest = crypto.createHash('sha256').update(persistedPayload).digest('hex');
   await client.query(`
     INSERT INTO evidence_items
       (id, tenant_id, asset_id, name, type, verified, signer, timestamp, hash,
@@ -126,12 +131,7 @@ async function persistProviderResult(
     `OSV response for ${component.name}@${component.version}`,
     timestamp,
     digest,
-    JSON.stringify({
-      source: 'https://api.osv.dev/v1/query',
-      requestedComponent: component,
-      receivedAt: timestamp,
-      response: providerResponse,
-    }),
+    persistedPayload,
   ]);
 
   const vulnerabilities = Array.isArray((providerResponse as any)?.vulns)
@@ -193,7 +193,6 @@ async function processJob(pool: Pool, job: ClaimedJob) {
         job,
         component,
         provider.response,
-        provider.raw,
       );
       await client.query('COMMIT');
     } catch (error) {
@@ -571,6 +570,12 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
     const manifestHash = sha256(JSON.stringify(manifests));
     const rawSbomHash = sha256(generated.raw);
     const componentsHash = sha256(JSON.stringify(components));
+    const sbomEvidencePayload = JSON.stringify({
+      format: 'CycloneDX JSON',
+      componentCount: components.length,
+      rawSbomHash,
+      normalizedComponentsHash: componentsHash,
+    });
     await pool.query(`
       UPDATE repository_scan_sources SET
         resolved_commit_sha = $2, default_branch = $3, visibility = $4,
@@ -614,14 +619,14 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
               'github.com', $4, $5, $6, 'repository-worker'),
              ($7, $2, $3, 'Manifest inventory', 'Build Log', 0,
               'repository-worker', $4, $8, $9, 'repository-worker'),
-             ($10, $2, $3, 'Syft CycloneDX SBOM', 'Build Log', 0,
+             ($10, $2, $3, 'Syft CycloneDX SBOM summary', 'Build Log', 0,
               'Syft 1.49.0', $4, $11, $12, 'repository-worker')
     `, [
       `ev-repo-${crypto.randomUUID()}`, job.tenant_id, job.passport_id,
       acquiredAt.toISOString(), sourceHash, JSON.stringify(descriptor),
       `ev-manifest-${crypto.randomUUID()}`, manifestHash, JSON.stringify(manifests),
-      `ev-sbom-${crypto.randomUUID()}`, rawSbomHash,
-      JSON.stringify({ format: 'CycloneDX JSON', componentCount: components.length, normalizedComponentsHash: componentsHash }),
+      `ev-sbom-${crypto.randomUUID()}`, sha256(sbomEvidencePayload),
+      sbomEvidencePayload,
     ]);
     await processJob(pool, job);
     const findings = (await pool.query(
