@@ -166,10 +166,22 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               <ShieldCheck className="h-4 w-4 text-indigo-300" />
               Software trust, organized
             </div>
-            <h1 className="text-5xl font-semibold leading-[1.08] tracking-tight">Your software registry starts here.</h1>
+            <h1 className="text-5xl font-semibold leading-[1.08] tracking-tight">Evidence your clients can inspect.</h1>
             <p className="mt-6 max-w-md text-base leading-7 text-slate-400">
-              Manage software passports, evidence, risk, and compliance from one secure workspace.
+              Register software, retain provider observations, and deliver tenant-scoped reports without overstating what was verified.
             </p>
+            <div className="mt-10 grid max-w-md grid-cols-3 gap-3">
+              {[
+                ['Tenant scoped', 'Database-enforced access'],
+                ['Provider backed', 'Stored OSV observations'],
+                ['Report ready', 'Client-readable evidence'],
+              ].map(([title, detail]) => (
+                <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                  <p className="text-xs font-semibold text-white">{title}</p>
+                  <p className="mt-1 text-[10px] leading-4 text-slate-500">{detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
         <p className="relative text-xs text-slate-500">Software Passport Registry</p>

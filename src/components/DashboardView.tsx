@@ -74,9 +74,49 @@ interface DashboardViewProps {
   onOpenQuickAction: (actionType: 'add-client' | 'register-passport' | 'scan-sbom') => void;
 }
 
-// Trusted software profiles are generated directly from registered passport evidence and verified publisher records.
-
+// This projection only describes stored passport fields. It deliberately does
+// not infer verification, certification, or procurement readiness.
 const getProfileForPassport = (p: SoftwarePassport) => {
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    trustRating: p.overallScore >= 90 ? 'High' : p.overallScore >= 70 ? 'Moderate' : 'Review',
+    badges: [`Stored score: ${p.overallScore}/100`, 'Evidence review required'],
+    executiveSummary: {
+      decision: p.overallScore >= 70 ? 'Review evidence' : 'Action required',
+      why: [
+        `${p.vulnerabilities?.length || 0} vulnerability record(s) attached`,
+        `${p.sbom?.length || 0} SBOM component record(s) attached`,
+        `Publisher recorded as ${p.publisher || 'not provided'}`,
+        'Review supporting evidence before making a procurement decision'
+      ]
+    },
+    signals: {
+      identity: 'Evidence pending',
+      engineering: `${p.overallScore}/100 recorded`,
+      security: `${p.securityScore}/100 recorded`,
+      compliance: `${p.complianceScore}/100 recorded`,
+      operations: 'Not independently verified',
+      reputation: 'Not independently verified'
+    },
+    evidence: {
+      aiExplanation: p.aiSummary || 'No model-generated explanation is stored for this passport.',
+      securityScans: `Stored scores: overall ${p.overallScore}/100, security ${p.securityScore}/100, compliance ${p.complianceScore}/100. Review source evidence before relying on these values.`,
+      sbom: p.sbom || [],
+      vulnerabilities: p.vulnerabilities || [],
+      codeQuality: `Recorded license: ${p.licenseType || 'not provided'}. Test compliance has not been independently verified.`,
+      complianceDocs: [`Stored compliance score: ${p.complianceScore}%`],
+      auditHistory: p.timeline?.map((t: any) => `${t.date}: ${t.event} - ${t.details}`) || []
+    }
+  };
+};
+
+/*
+ * Historical product-specific recommendation copy was removed from the live
+ * projection. Keep no inferred trust claims here; use stored evidence only.
+ */
+const _removedLegacyProfileProjection = (p: SoftwarePassport) => {
   const isPostgres = p.id.includes('postgres') || p.name.toLowerCase().includes('postgres');
   const isLog4j = p.id.includes('log4j') || p.name.toLowerCase().includes('log4j');
   const isNginx = p.id.includes('nginx') || p.name.toLowerCase().includes('nginx');
@@ -418,7 +458,7 @@ export default function DashboardView({
   };
 
   // 4. Zero-Friction Auto-Onboarding Workflow Engine state
-  const [repoUrlInput, setRepoUrlInput] = useState('https://github.com/enterprise-core/secure-auth');
+  const [repoUrlInput, setRepoUrlInput] = useState('');
   const [onboardingStep, setOnboardingStep] = useState<'idle' | 'discovering' | 'parsing' | 'signing' | 'verifying' | 'completed'>('idle');
   const [onboardingProgress, setOnboardingProgress] = useState(0);
 
@@ -665,20 +705,20 @@ export default function DashboardView({
     if (summaryMode === 'security') {
       if (!isGlobal) {
         return {
-          text: `Supply chain profile for tenant ${activeClient!.name} demonstrates a Trust Score of ${avgTrustScore}/100. There are currently ${criticalRisksCount} unresolved critical threat alert(s) in active libraries requiring remediation actions. Signature pedigree is verified for registered subcomponents.`,
+          text: `Tenant ${activeClient!.name} currently has a calculated trust score of ${avgTrustScore}/100 from stored records and ${criticalRisksCount} active critical alert(s). Review individual evidence states before making an assurance claim.`,
           badge: `Tenant: ${activeClient!.name}`,
           badgeColor: 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-900/40 dark:text-indigo-300'
         };
       }
       return {
-        text: `The active supply-chain profile shows an average Trust Score of ${avgTrustScore}/100 across ${totalClients} registered tenant(s) and ${activePassports} software passport(s). There are currently ${criticalRisksCount} active critical security threat(s) across tenant assets.`,
-        badge: criticalRisksCount > 0 ? 'Posture: Alert' : 'Posture: Secure',
+        text: `Stored records currently calculate an average trust score of ${avgTrustScore}/100 across ${totalClients} client(s) and ${activePassports} passport(s), with ${criticalRisksCount} active critical alert(s).`,
+        badge: criticalRisksCount > 0 ? 'Attention required' : 'No critical alerts recorded',
         badgeColor: criticalRisksCount > 0 ? 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/40 dark:border-rose-900/40 dark:text-rose-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300'
       };
     } else if (summaryMode === 'compliance') {
       if (!isGlobal) {
         return {
-          text: `Compliance posture for tenant ${activeClient!.name} stands at ${overallComplianceProgress}%. The audit reports for registered software inventories are active with zero unapproved third-party integrations.`,
+          text: `Tenant ${activeClient!.name} has a stored compliance-progress value of ${overallComplianceProgress}%. This is a workspace metric, not a regulatory certification.`,
           badge: 'Compliance: In Focus',
           badgeColor: 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-900/40 dark:text-indigo-300'
         };
@@ -692,8 +732,8 @@ export default function DashboardView({
       const activeInventoryCount = filteredClients.reduce((acc, c) => acc + (c.softwareInventory ? c.softwareInventory.length : 0), 0);
       if (!isGlobal) {
         return {
-          text: `Supplier reputation scan identifies ${activeInventoryCount} cataloged software subcomponents across verified software vendors for tenant ${activeClient!.name}.`,
-          badge: 'Suppliers: Audited',
+          text: `Tenant ${activeClient!.name} has ${activeInventoryCount} registered software inventory item(s). Supplier identity remains unverified unless supporting evidence says otherwise.`,
+          badge: 'Registered inventory',
           badgeColor: 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300'
         };
       }
@@ -749,7 +789,7 @@ export default function DashboardView({
         </button>
       </div>
 
-      {dashboardSubTab === 'ledger' && (
+      {false && dashboardSubTab === 'ledger' && (
         <>
           {/* SECTION 1: MASTER PIECE - THE SOFTWARE PASSPORT EXPERIENCE */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -1266,8 +1306,9 @@ export default function DashboardView({
       </>
       )}
 
-      {/* SECTION 4: PRIVATE FOUNDER INTELLIGENCE CENTER (Command Center) */}
-      {!isFounderCenterExpanded ? (
+      {/* Legacy founder cockpit is disabled: its browser-only passcode and
+          fallback metrics are not a valid authorization or evidence boundary. */}
+      {false && (!isFounderCenterExpanded ? (
         <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-50 dark:bg-amber-950/40 rounded-xl text-amber-500">
@@ -1414,7 +1455,7 @@ export default function DashboardView({
             </AnimatePresence>
           )}
         </div>
-      )}
+      ))}
 
       {dashboardSubTab === 'overview' && (
         <>
@@ -1465,7 +1506,7 @@ export default function DashboardView({
             <h3 className="text-2xl font-display font-bold text-slate-900 dark:text-zinc-50">{totalClients}</h3>
             <p className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-1">
               <ArrowUpRight className="w-3 h-3 text-emerald-500" />
-              <span className="text-emerald-500 font-semibold">+1 Onboarded</span> this month
+              <span className="text-slate-500 font-semibold">Current tenant scope</span>
             </p>
           </div>
         </div>
@@ -1672,7 +1713,7 @@ export default function DashboardView({
               <div className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-850 rounded-lg p-3.5">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] text-slate-500 font-mono font-bold uppercase">Client Trust Trend</span>
-                  <span className="text-emerald-600 text-[10px] font-bold font-mono">+4.2% QoQ</span>
+                  <span className="text-slate-400 text-[10px] font-bold font-mono">No historical comparison</span>
                 </div>
                 {/* Simulated clean chart line */}
                 <div className="h-20 w-full mt-3 flex items-end">

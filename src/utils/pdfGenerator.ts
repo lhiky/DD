@@ -112,8 +112,8 @@ export function generateClientCompliancePDF(client: Client) {
 
   const metrics = [
     { label: 'TRUST SCORE', val: `${client.trustScore}/100`, status: client.riskLevel + ' Risk', color: client.riskLevel === 'Safe' ? [16, 185, 129] : [245, 158, 11] },
-    { label: 'COMPLIANCE SLA', val: `${client.complianceProgress}%`, status: 'Certified Controls', color: [79, 70, 229] },
-    { label: 'PASSPORTS IN USE', val: `${client.softwareInventory.length}`, status: 'Verified Active', color: [13, 148, 136] },
+    { label: 'RECORDED PROGRESS', val: `${client.complianceProgress}%`, status: 'Review evidence', color: [79, 70, 229] },
+    { label: 'PASSPORTS IN USE', val: `${client.softwareInventory.length}`, status: 'Stored records', color: [13, 148, 136] },
     { label: 'CRITICAL RISKS', val: `${client.criticalRisksCount}`, status: client.criticalRisksCount > 0 ? 'Action Required' : 'Guarded', color: client.criticalRisksCount > 0 ? [239, 68, 68] : [16, 185, 129] },
   ];
 
@@ -164,7 +164,7 @@ export function generateClientCompliancePDF(client: Client) {
 
   autoTable(doc, {
     startY: currentY,
-    head: [['Framework Code', 'Framework Standard Name', 'Progress', 'Certified Controls', 'Status']],
+    head: [['Framework Code', 'Framework Standard Name', 'Progress', 'Recorded Controls', 'Status']],
     body: frameworksRows,
     theme: 'striped',
     headStyles: { fillColor: [79, 70, 229], fontSize: 8, fontStyle: 'bold' },
@@ -376,7 +376,7 @@ export function generateCoBrandedTrustReport(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(186, 230, 253); // light cyan-200
-  doc.text(`Continuous integrity check & pedigree ledger provided by ${mspName}`, startX + 6, currentY + 29);
+  doc.text(`Evidence report prepared by ${mspName}`, startX + 6, currentY + 29);
   doc.setTextColor(255, 255, 255);
   doc.text(`Generated: ${timestamp}`, startX + 6, currentY + 34);
 
@@ -409,9 +409,9 @@ export function generateCoBrandedTrustReport(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(255, 255, 255);
-    doc.text('VERIFIED', startX + 150.5, currentY + 20);
+    doc.text('EVIDENCE', startX + 149.5, currentY + 20);
     doc.setFontSize(5);
-    doc.text('SECURE LOG', startX + 151.8, currentY + 23.5);
+    doc.text('REVIEW', startX + 152.2, currentY + 23.5);
   }
 
   currentY += 52;
@@ -458,8 +458,8 @@ export function generateCoBrandedTrustReport(
 
     const metrics = [
       { label: 'CLIENT TRUST SCORE', val: `${client.trustScore}/100`, sub: `${client.riskLevel} Risk Profile`, color: client.riskLevel === 'Safe' ? [16, 185, 129] : [245, 158, 11] },
-      { label: 'ACTIVE PASSPORTS', val: `${client.softwareInventory.length} Active`, sub: 'Cryptographically Sealed', color: [rgb.r, rgb.g, rgb.b] },
-      { label: 'PATCHED VULNS (CVE)', val: `${patchedCvesCount} Patched`, sub: 'Remediated past 30 days', color: [16, 185, 129] },
+      { label: 'REGISTERED PASSPORTS', val: `${client.softwareInventory.length} Active`, sub: 'Evidence state varies', color: [rgb.r, rgb.g, rgb.b] },
+      { label: 'USER-REPORTED REMEDIATIONS', val: `${patchedCvesCount} recorded`, sub: 'Review supporting records', color: [16, 185, 129] },
       { label: 'UNRESOLVED ALERTS', val: `${client.criticalRisksCount}`, sub: client.criticalRisksCount > 0 ? 'Action Required' : 'Guarded', color: client.criticalRisksCount > 0 ? [239, 68, 68] : [16, 185, 129] },
     ];
 
@@ -492,7 +492,7 @@ export function generateCoBrandedTrustReport(
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
-    doc.text('3. COMPLIANT SOFTWARE PASSPORT INVENTORY', startX, currentY);
+    doc.text('3. REGISTERED SOFTWARE PASSPORT INVENTORY', startX, currentY);
     doc.line(startX, currentY + 2, startX + 180, currentY + 2);
 
     currentY += 6;
@@ -541,7 +541,7 @@ export function generateCoBrandedTrustReport(
     currentY = (doc as any).lastAutoTable.finalY + 10;
   }
 
-  // --- NIST & SOC-2 COMPLIANCE CHECKLIST ---
+  // --- USER-REVIEWED CONTROL CHECKLIST ---
   if (includeComplianceChecklist) {
     if (currentY > 210) {
       doc.addPage();
@@ -551,18 +551,18 @@ export function generateCoBrandedTrustReport(
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
-    doc.text('4. NIST SP 800-161 & SOC-2 SUPPLY-CHAIN CONTROLS', startX, currentY);
+    doc.text('4. RECORDED CONTROL AND EVIDENCE STATUS', startX, currentY);
     doc.line(startX, currentY + 2, startX + 180, currentY + 2);
 
     currentY += 7;
 
     const checklistRows = [
-      ['NIST.SC-1', 'Cryptographic Signature Verification', 'SLSA Level 3/4 enforcement on binary packages', 'VERIFIED / ENFORCED'],
-      ['NIST.SC-3', 'Continuous SBOM Inventory Audits', 'Daily mapping of nested transitive dependencies', 'VERIFIED / PASSING'],
-      ['NIST.SC-5', 'Exploit Feeds Mapping & CVE Syncing', 'Real-time sync with CISA, KEV, and NVD vulnerability databases', 'VERIFIED / ALIGNED'],
-      ['SOC2.CC-6', 'Multi-Tenant Network & Asset Separation', 'Logical container/registry network segregation policies', 'VERIFIED / COMPLIANT'],
-      ['SOC2.CC-8', 'Tamper-Evident Attestation Ledgers', 'Cryptographically sealed audit logs stored securely', 'VERIFIED / ENFORCED'],
-      ['SOC2.A-1', 'Automated Threat Quarantine Response', 'Rule-based isolation of unsigned or modified attestation assets', 'VERIFIED / ACTIVE']
+      ['NIST.SC-1', 'Signature evidence', 'Review attached package-signature evidence', 'REVIEW REQUIRED'],
+      ['NIST.SC-3', 'SBOM inventory', 'Review stored component inventory and its collection date', 'REVIEW REQUIRED'],
+      ['NIST.SC-5', 'Vulnerability observations', 'Review provider, timestamp, and affected package mapping', 'REVIEW REQUIRED'],
+      ['SOC2.CC-6', 'Tenant separation', 'Review application and database isolation evidence', 'REVIEW REQUIRED'],
+      ['SOC2.CC-8', 'Change evidence', 'Review stored audit events and integrity controls', 'REVIEW REQUIRED'],
+      ['SOC2.A-1', 'Response records', 'Review documented remediation and response evidence', 'REVIEW REQUIRED']
     ];
 
     autoTable(doc, {
@@ -599,7 +599,7 @@ export function generateCoBrandedTrustReport(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
     const stepNum = (includeSummary ? 1 : 0) + (includeMetrics ? 1 : 0) + (includeInventory ? 1 : 0) + (includeComplianceChecklist ? 1 : 0);
-    doc.text(`${stepNum}. SIGNATURE DELIVERY DEED & ATTESTATION`, startX, currentY);
+    doc.text(`${stepNum}. REPORT DELIVERY ACKNOWLEDGEMENT`, startX, currentY);
     doc.line(startX, currentY + 2, startX + 180, currentY + 2);
 
     currentY += 8;
@@ -619,7 +619,7 @@ export function generateCoBrandedTrustReport(
     doc.setFont('helvetica', 'bold');
     doc.text('END CLIENT RECEIPT CONFIRMATION', startX + 105, currentY + 16);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Onboarded Tenant: ${client.name}`, startX + 105, currentY + 20);
+    doc.text(`Tenant: ${client.name}`, startX + 105, currentY + 20);
   }
 
   // Footer processing
@@ -635,7 +635,7 @@ export function generateCoBrandedTrustReport(
     doc.setFontSize(6);
     doc.setTextColor(148, 163, 184);
     doc.text(`CO-BRANDED REPORT DELIVERED BY ${mspName.toUpperCase()}`, startX, 286);
-    doc.text(`VERIFICATION PROTOCOL: HYBRID ATTESTATION REGISTRY | RUNTIME: ${timestamp}`, startX, 290);
+    doc.text(`EVIDENCE STATES MUST BE REVIEWED INDIVIDUALLY | GENERATED: ${timestamp}`, startX, 290);
     
     doc.setFont('helvetica', 'bold');
     doc.text(`Page ${i} of ${pageCount}`, startX + 163, 286);

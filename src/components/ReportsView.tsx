@@ -12,9 +12,9 @@ import {
 import { Client } from '../types';
 
 const REPORT_TEMPLATES = [
-  { id: 'rep-ceo', name: 'Executive Trust Summary', type: 'Executive Summary', description: 'Summarizes verified software trust posture, credential provenance, and audit readiness for leadership review.', frequency: 'Monthly' },
+  { id: 'rep-ceo', name: 'Executive Evidence Summary', type: 'Executive Summary', description: 'Summarizes stored software metrics, evidence status, and items requiring leadership review.', frequency: 'Monthly' },
   { id: 'rep-investor', name: 'Vendor Risk Portfolio', type: 'Supplier Risk Portfolio', description: 'Detailed evidence package for third-party software vendors, dependency lineage, and compliance alignment.', frequency: 'Quarterly' },
-  { id: 'rep-auditor', name: 'Compliance Attestation Report', type: 'Compliance Attestation', description: 'Certified audit documentation mapping signed SBOM records, verification history, and regulatory controls.', frequency: 'Quarterly' },
+  { id: 'rep-auditor', name: 'Compliance Evidence Report', type: 'Evidence Review', description: 'Maps stored SBOM records, audit history, and control evidence for independent review.', frequency: 'Quarterly' },
   { id: 'rep-vuln', name: 'Vulnerability Findings Summary', type: 'Vulnerability Audit', description: 'Current CVE posture and remediation status for registered software passports and associated components.', frequency: 'Ad-hoc' }
 ];
 import { generateClientCompliancePDF, generateCoBrandedTrustReport } from '../utils/pdfGenerator';
@@ -36,13 +36,11 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
   const [isJsonExporting, setIsJsonExporting] = useState(false);
 
   // MSP Co-Branding Customizer states
-  const [mspName, setMspName] = useState('Aegis Cyber Solutions');
+  const [mspName, setMspName] = useState('');
   const [brandColor, setBrandColor] = useState('#4f46e5');
   const [reportTitle, setReportTitle] = useState('Software Supply Chain Trust Audit');
-  const [patchedCves, setPatchedCves] = useState(32);
-  const [executiveSummary, setExecutiveSummary] = useState(
-    'This comprehensive Software Trust Report delivers verified attestation signatures, current package CVE analysis, and multi-tenant security ratings. All software passports have been cryptographically sealed and comply with NIST supply-chain directives.'
-  );
+  const [patchedCves, setPatchedCves] = useState(0);
+  const [executiveSummary, setExecutiveSummary] = useState('');
   const [includeSignatureLine, setIncludeSignatureLine] = useState(true);
   const [isCompilingCoBranded, setIsCompilingCoBranded] = useState(false);
 
@@ -78,7 +76,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
   const handleGenerateCoBrandedPdf = () => {
     if (!selectedClient) return;
     setIsCompilingCoBranded(true);
-    setTimeout(() => {
+    try {
       generateCoBrandedTrustReport(
         selectedClient,
         mspName,
@@ -94,8 +92,9 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
         includeSignatureLine,
         selectedAssetNames
       );
+    } finally {
       setIsCompilingCoBranded(false);
-    }, 1500);
+    }
   };
 
   const handleGenerateReport = (id: string) => {
@@ -218,8 +217,8 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
       csvContent += "\n";
       
       // 2. Compliance Frameworks
-      csvContent += "--- 2. CERTIFIED COMPLIANCE FRAMEWORKS ---\n";
-      csvContent += "Standard Code,Standard Name,Compliance %,Certified Controls,SLA Status\n";
+      csvContent += "--- 2. RECORDED COMPLIANCE FRAMEWORKS ---\n";
+      csvContent += "Standard Code,Standard Name,Recorded Progress %,Recorded Controls,Status\n";
       (selectedClient.complianceStatus || []).forEach(f => {
         csvContent += `"${f.code}","${f.name}","${f.progress}%","${f.compliantControls} / ${f.totalControls}","${f.status}"\n`;
       });
@@ -552,7 +551,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
               <div>
                 <h2 className="text-sm font-bold text-slate-800 font-display">MSP Co-Branded Software Trust Report Designer</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Design a bespoke trust report with custom branding, specific compliance modules, and targeted client assets to deliver to {selectedClient.name}.
+                  Prepare a client-facing evidence report for {selectedClient.name}. Branding applies to this export only and is not yet saved as a tenant-wide white-label setting.
                 </p>
               </div>
             </div>
@@ -676,7 +675,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                       ) : (
                         <div className="text-center w-full py-1">
                           <p className="font-bold text-slate-400 text-[10px]">No Custom Logo Uploaded</p>
-                          <p className="text-[9px] text-slate-400 mt-0.5">Using default attestation seal</p>
+                          <p className="text-[9px] text-slate-400 mt-0.5">Using default report mark</p>
                         </div>
                       )}
                     </div>
@@ -726,7 +725,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                       className="w-4 h-4 mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                     />
                     <div>
-                      <span className="font-bold text-slate-700 text-[10px]">3. Sealed Software Inventory Table</span>
+                      <span className="font-bold text-slate-700 text-[10px]">3. Recorded Software Inventory</span>
                       <p className="text-[8px] text-slate-400 leading-tight">List of audited vendor software components selected below.</p>
                     </div>
                   </label>
@@ -739,7 +738,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                       className="w-4 h-4 mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                     />
                     <div>
-                      <span className="font-bold text-slate-700 text-[10px]">4. NIST Supply-Chain Checklist</span>
+                      <span className="font-bold text-slate-700 text-[10px]">4. Control Evidence Review</span>
                       <p className="text-[8px] text-slate-400 leading-tight">Regulatory mappings of SBOM, signatures, and container separation policies.</p>
                     </div>
                   </label>
@@ -815,7 +814,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
               {/* Patched CVE metrics & Signature Handover */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                 <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-700">Vulnerabilities Patched (CVE count)</label>
+                  <label className="font-bold text-slate-700">User-reported remediations</label>
                   <input
                     type="number"
                     min="0"
@@ -823,7 +822,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                     onChange={(e) => setPatchedCves(parseInt(e.target.value) || 0)}
                     className="bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none font-semibold text-slate-800"
                   />
-                  <p className="text-[10px] text-slate-400 mt-0.5">MSPs look like heroes when highlighting CVEs patched.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Enter only a remediation count supported by your records. This value is user-supplied.</p>
                 </div>
 
                 <div className="flex items-center gap-3 self-center pt-2 sm:pt-0">
@@ -880,7 +879,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                     {/* Header banner matching selected accent color */}
                     <div style={{ backgroundColor: brandColor }} className="p-4 text-white relative transition-colors duration-350 min-h-[95px] flex flex-col justify-between">
                       <div className="bg-slate-900/60 border border-slate-800/10 px-2 py-0.5 rounded text-[8px] font-mono font-bold tracking-wide uppercase inline-block max-w-[130px] truncate">
-                        {mspName || 'Aegis Cyber'} x {selectedClient.name}
+                        {mspName || 'Your MSP'} × {selectedClient.name}
                       </div>
 
                       {/* Top-right custom logo in preview if uploaded */}
@@ -900,7 +899,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                         </h3>
                         
                         <p className="text-[7px] text-indigo-150 mt-1 font-mono leading-none">
-                          Pedigree ledger compiled by {mspName || 'the MSP'}.
+                          Evidence report prepared by {mspName || 'the MSP'}.
                         </p>
                       </div>
                     </div>
@@ -928,7 +927,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
 
                           <div className="bg-slate-50 p-1.5 rounded border border-slate-100">
                             <p className="text-[6px] text-slate-400 font-mono font-bold uppercase leading-none">Patched Vulns</p>
-                            <p className="font-extrabold text-emerald-600 mt-0.5">+{patchedCves} CVEs</p>
+                            <p className="font-extrabold text-slate-700 mt-0.5">{patchedCves} recorded</p>
                           </div>
                         </div>
                       )}
@@ -960,8 +959,8 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                       {/* Compliance controls */}
                       {includeComplianceChecklist && (
                         <div className="bg-slate-900 text-white rounded p-1.5 text-[7px] flex items-center justify-between">
-                          <span className="font-bold">NIST SP 800-161 / SOC-2 Controls</span>
-                          <span className="text-emerald-400 font-mono font-bold uppercase">6 of 6 Verified</span>
+                          <span className="font-bold">Control evidence checklist</span>
+                          <span className="text-amber-300 font-mono font-bold uppercase">Independent review required</span>
                         </div>
                       )}
 
