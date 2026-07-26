@@ -74,7 +74,7 @@ export const requireAuth = async (
   try {
     let decodedToken: any;
     try {
-      decodedToken = await adminAuth.verifyIdToken(token);
+      decodedToken = await adminAuth.verifyIdToken(token, true);
     } catch (err: any) {
       console.warn('[Security Auth Middleware] Token verification failed:', err?.message || err);
       return res.status(401).json({ 

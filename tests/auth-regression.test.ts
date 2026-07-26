@@ -48,6 +48,11 @@ describe('auth regression guard — src/middleware/security.ts', () => {
     }
   });
 
+  it('checks Firebase revocation and disabled-user state at request time', () => {
+    expect(securitySource).toContain('adminAuth.verifyIdToken(token, true)');
+    expect(securitySource).not.toContain('adminAuth.verifyIdToken(token);');
+  });
+
   it('requireAuth returns 401 in the same catch block where verifyIdToken() fails (fails closed)', () => {
     // Find the verifyIdToken() call and confirm the immediately-following catch
     // block returns a 401 rather than falling through to construct a user object.
