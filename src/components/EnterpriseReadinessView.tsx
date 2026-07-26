@@ -148,7 +148,7 @@ export default function EnterpriseReadinessView({ clients }: EnterpriseReadiness
       // 8. Billing
       { id: 'bill-1', category: 'billing', name: 'Flexible multi-tier licensing', status: 'Deployed', desc: 'Dynamic state locks for Standard, Enterprise, and Premium tiers with overlay payment gates.', proof: 'PaywallOverlay component' },
       { id: 'bill-2', category: 'billing', name: 'Support ticket system', status: 'Deployed', desc: 'Built-in support request form to route technical tickets directly to SPR team.', proof: 'BillingView.tsx customer support' },
-      { id: 'bill-3', category: 'billing', name: 'Status page', status: 'Deployed', desc: 'Public platform status page verifying system uptime (99.98% SLA maintained).', proof: 'https://status.spr.io (Simulated)' },
+      { id: 'bill-3', category: 'billing', name: 'Status page', status: 'Pending', desc: 'No production status page or measured uptime SLI is configured.', proof: '' },
       { id: 'bill-4', category: 'billing', name: 'Customer onboarding documentation', status: 'Deployed', desc: 'Step-by-step guides helping enterprise tenants setup OIDC directories and scan SBOMs.', proof: 'Settings / Help desk active' },
 
       // 9. Sales

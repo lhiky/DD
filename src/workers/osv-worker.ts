@@ -65,8 +65,8 @@ async function claimJob(pool: Pool): Promise<ClaimedJob | null> {
           locked_at = NOW(),
           locked_by = $2,
           updated_at = NOW()
-      WHERE id = $1
-    `, [job.id, WORKER_ID]);
+      WHERE id = $1 AND tenant_id = $3
+    `, [job.id, WORKER_ID, job.tenant_id]);
     await client.query('COMMIT');
     return { ...job, attempt_count: job.attempt_count + 1 };
   } catch (error) {
@@ -269,7 +269,7 @@ async function processJob(pool: Pool, job: ClaimedJob) {
     UPDATE agent_jobs
     SET status = 'Completed', progress = 100, result = $2, error = NULL,
         completed_at = NOW(), locked_at = NULL, locked_by = NULL, updated_at = NOW()
-    WHERE id = $1
+    WHERE id = $1 AND tenant_id = $3
   `, [
     job.id,
     JSON.stringify({
@@ -280,6 +280,7 @@ async function processJob(pool: Pool, job: ClaimedJob) {
       findingsPersisted: findingCount,
       completedAt,
     }),
+    job.tenant_id,
   ]);
 }
 
@@ -660,12 +661,12 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
         scanner_mode = 'directory CycloneDX JSON',
         scanner_started_at = $14, scanner_ended_at = $15,
         scanner_exit_code = 0, scanner_error_category = NULL
-      WHERE job_id = $1
+      WHERE job_id = $1 AND tenant_id = $16
     `, [
       job.id, commitSha, descriptor.defaultBranch, descriptor.visibility,
       acquiredAt, sourceHash, JSON.stringify(manifests), manifestHash,
       rawSbomHash, JSON.stringify(sbom), JSON.stringify(components), componentsHash, SYFT_VERSION,
-      scannerStartedAt, scannerEndedAt,
+      scannerStartedAt, scannerEndedAt, job.tenant_id,
     ]);
     await pool.query(`
       INSERT INTO passports
@@ -678,6 +679,7 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
         version = EXCLUDED.version, file_hash = EXCLUDED.file_hash,
         sbom = EXCLUDED.sbom, overall_score = 0, security_score = 0,
         compliance_score = 0, vendor_reputation_score = 0
+      WHERE passports.tenant_id = EXCLUDED.tenant_id
     `, [
       job.passport_id, job.tenant_id, source.repository_name, commitSha,
       source.repository_owner, acquiredAt.toISOString().slice(0, 10),
@@ -704,27 +706,27 @@ async function processRepositoryJob(pool: Pool, job: ClaimedJob) {
     ]);
     await processJob(pool, job);
     const findings = (await pool.query(
-      'SELECT title, component, status, detected_at FROM scan_findings WHERE job_id = $1 ORDER BY id',
-      [job.id],
+      'SELECT title, component, status, detected_at FROM scan_findings WHERE job_id = $1 AND tenant_id = $2 ORDER BY id',
+      [job.id, job.tenant_id],
     )).rows;
     await pool.query(
-      'UPDATE repository_scan_sources SET final_findings_hash = $2 WHERE job_id = $1',
-      [job.id, sha256(JSON.stringify(findings))],
+      'UPDATE repository_scan_sources SET final_findings_hash = $2 WHERE job_id = $1 AND tenant_id = $3',
+      [job.id, sha256(JSON.stringify(findings)), job.tenant_id],
     );
   } catch (error: any) {
     await pool.query(`
       UPDATE repository_scan_sources SET
         scanner_ended_at = NOW(), scanner_exit_code = COALESCE(scanner_exit_code, -1),
         scanner_error_category = $2
-      WHERE job_id = $1
-    `, [job.id, String(error?.message || 'REPOSITORY_SCAN_FAILED').slice(0, 100)]);
+      WHERE job_id = $1 AND tenant_id = $3
+    `, [job.id, String(error?.message || 'REPOSITORY_SCAN_FAILED').slice(0, 100), job.tenant_id]);
     throw error;
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
     cleanupSucceeded = true;
     await pool.query(
-      'UPDATE repository_scan_sources SET temporary_directory_removed = $2 WHERE job_id = $1',
-      [job.id, cleanupSucceeded ? 1 : 0],
+      'UPDATE repository_scan_sources SET temporary_directory_removed = $2 WHERE job_id = $1 AND tenant_id = $3',
+      [job.id, cleanupSucceeded ? 1 : 0, job.tenant_id],
     );
   }
 }
@@ -742,8 +744,8 @@ async function failJob(pool: Pool, job: ClaimedJob, error: unknown) {
         locked_by = NULL,
         completed_at = CASE WHEN $2 = 'Failed' THEN NOW() ELSE completed_at END,
         updated_at = NOW()
-    WHERE id = $1
-  `, [job.id, retry ? 'Pending' : 'Failed', code.slice(0, 200)]);
+    WHERE id = $1 AND tenant_id = $4
+  `, [job.id, retry ? 'Pending' : 'Failed', code.slice(0, 200), job.tenant_id]);
 }
 
 export async function runWorkerOnce(pool: Pool) {

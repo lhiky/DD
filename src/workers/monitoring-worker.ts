@@ -115,16 +115,17 @@ export async function claimCollectorJob(pool: Pool, workerId = MONITORING_WORKER
 }
 
 export async function heartbeatCollectorJob(
-  pool: Pool, jobId: string, workerId: string, now = new Date(),
+  pool: Pool, jobId: string, tenantId: string, workerId: string, now = new Date(),
 ) {
   const result = await pool.query(`
     UPDATE collector_jobs
     SET heartbeat_at = $3,
         lease_expires_at = ($3::timestamptz + make_interval(secs => $4))::text,
         state = 'running'
-    WHERE id = $1 AND lease_owner = $2 AND state IN ('claimed','running')
+    WHERE id = $1 AND tenant_id = $5
+      AND lease_owner = $2 AND state IN ('claimed','running')
     RETURNING id, lease_expires_at
-  `, [jobId, workerId, now.toISOString(), LEASE_SECONDS]);
+  `, [jobId, workerId, now.toISOString(), LEASE_SECONDS, tenantId]);
   if (!result.rows[0]) throw new Error('JOB_LEASE_LOST');
   return result.rows[0];
 }
@@ -157,9 +158,10 @@ export async function recordCollectorFailure(
         lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
         completed_at = CASE WHEN $4 = 'dead_lettered' THEN $3 ELSE completed_at END,
         next_attempt_at = ($3::timestamptz + make_interval(secs => LEAST(3600, 30 * POWER(2, attempt_number))))::text
-    WHERE id = $1 AND lease_owner = $2 AND state IN ('claimed','running')
+    WHERE id = $1 AND tenant_id = $7
+      AND lease_owner = $2 AND state IN ('claimed','running')
     RETURNING id, state
-  `, [job.id, workerId, now.toISOString(), state, code, message]);
+  `, [job.id, workerId, now.toISOString(), state, code, message, job.tenant_id]);
   if (!result.rows[0]) throw new Error('JOB_LEASE_LOST');
   return result.rows[0];
 }

@@ -1039,15 +1039,15 @@ export default function SettingsView({ theme, onToggleTheme }: SettingsViewProps
               <div className="text-xs space-y-2.5 font-mono text-slate-400 dark:text-zinc-500">
                 <div className="flex justify-between border-b border-slate-100 dark:border-zinc-800/40 pb-1.5">
                   <span>PORTAL SERVICE:</span>
-                  <span className="font-bold text-slate-700 dark:text-zinc-300">SPR-CORE-VM</span>
+                  <span className="font-bold text-slate-700 dark:text-zinc-300">Not reported by runtime</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-100 dark:border-zinc-800/40 pb-1.5">
                   <span>COMPILATION:</span>
-                  <span className="font-bold text-slate-700 dark:text-zinc-300">DOCKER PROD v2.4</span>
+                  <span className="font-bold text-slate-700 dark:text-zinc-300">Not reported by build</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-100 dark:border-zinc-800/40 pb-1.5">
                   <span>SLA COMPLIANCE:</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">99.98%</span>
+                  <span className="font-bold text-slate-500 dark:text-zinc-400">No measured SLI available</span>
                 </div>
               </div>
             </div>
@@ -1058,7 +1058,7 @@ export default function SettingsView({ theme, onToggleTheme }: SettingsViewProps
                 <span>CI/CD Integration Diagnostics</span>
               </h3>
               <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-sans leading-relaxed">
-                Verify database connectivity, multi-tenant row-level isolation rules, OAuth handshakes, and API quota safety layers in real-time.
+                Check database connectivity, tenant filters in application queries, authenticated identity, and configured service availability.
               </p>
 
               <button

@@ -14,6 +14,7 @@ import cors from 'cors';
 import Stripe from 'stripe';
 import * as Sentry from '@sentry/node';
 import { generateRealSbom } from './src/utils/sbom.ts';
+import { decryptMfaSecret, encryptMfaSecret } from './src/utils/mfa-secret.ts';
 
 import { db } from './src/db/index.ts';
 import {
@@ -692,7 +693,7 @@ async function startServer() {
   };
 
   // --- IDENTITY & COMPLIANCE DATABASE LEDGER COUPLING ---
-  const addAuditLogBlock = async (userEmail: string, actionType: string, ip: string, outcome: string, details: string, tenantId = 'tenant-default') => {
+  const addAuditLogBlock = async (userEmail: string, actionType: string, ip: string, outcome: string, details: string, tenantId: string) => {
     try {
       await addPostgresAuditLog(tenantId, actionType, userEmail, {
         actionType,
@@ -1356,21 +1357,92 @@ async function startServer() {
     return false;
   }
 
+  function createTOTPSecret() {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    const bytes = crypto.randomBytes(20);
+    let bits = '';
+    for (const byte of bytes) bits += byte.toString(2).padStart(8, '0');
+    let secret = '';
+    for (let offset = 0; offset < bits.length; offset += 5) {
+      secret += alphabet[parseInt(bits.slice(offset, offset + 5).padEnd(5, '0'), 2)];
+    }
+    return secret;
+  }
+
+  app.post('/api/organization/security/enroll-mfa', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const dbUser = await db.select({
+        id: usersTable.id,
+        mfaEnabled: usersTable.mfaEnabled,
+      }).from(usersTable).where(and(
+        eq(usersTable.uid, req.user!.uid),
+        eq(usersTable.tenantId, req.user!.tenantId),
+      )).then(rows => rows[0]);
+      if (!dbUser) {
+        return res.status(404).json({ error: 'User record not found.' });
+      }
+      if (dbUser.mfaEnabled === 1) {
+        return res.status(409).json({
+          error: 'MFA is already enabled. Disable it through the authenticated security settings flow before re-enrolling.',
+        });
+      }
+      const secret = createTOTPSecret();
+      const updated = await db.update(usersTable)
+        .set({ mfaSecret: encryptMfaSecret(secret), mfaEnabled: 0 })
+        .where(and(
+          eq(usersTable.uid, req.user!.uid),
+          eq(usersTable.tenantId, req.user!.tenantId),
+          eq(usersTable.mfaEnabled, 0),
+        ))
+        .returning({ id: usersTable.id });
+      if (!updated[0]) {
+        return res.status(404).json({ error: 'User record not found.' });
+      }
+      const accountLabel = encodeURIComponent(req.user!.email);
+      const provisioningUri =
+        `otpauth://totp/SoftwarePassportRegistry:${accountLabel}` +
+        `?secret=${secret}&issuer=SoftwarePassportRegistry`;
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({
+        secret: secret.match(/.{1,4}/g)?.join(' ') || secret,
+        provisioningUri,
+      });
+    } catch (err) {
+      trackAndLogError(err, 'POST /api/organization/security/enroll-mfa');
+      return res.status(500).json({ error: 'Failed to begin MFA enrollment.' });
+    }
+  });
+
   app.post('/api/organization/security/verify-mfa', requireAuth, validateBody(verifyMfaSchema), async (req: AuthenticatedRequest, res) => {
     try {
-      const { code, secret } = req.body;
+      const { code } = req.body;
       if (!code || typeof code !== 'string') {
         return res.status(400).json({ error: 'A 6-digit verification code is required.' });
       }
 
-      const dbUser = await db.select().from(usersTable).where(eq(usersTable.uid, req.user!.uid)).then(rows => rows[0]);
+      const dbUser = await db.select().from(usersTable).where(and(
+        eq(usersTable.uid, req.user!.uid),
+        eq(usersTable.tenantId, req.user!.tenantId),
+      )).then(rows => rows[0]);
       if (!dbUser) {
         return res.status(404).json({ error: 'User record not found.' });
       }
 
-      const secretToVerify = secret || dbUser.mfaSecret;
-      if (!secretToVerify) {
-        return res.status(400).json({ error: 'No MFA TOTP secret provided or configured for user.' });
+      if (!dbUser.mfaSecret) {
+        return res.status(400).json({ error: 'Begin MFA enrollment before verifying a code.' });
+      }
+      let secretToVerify: string;
+      try {
+        secretToVerify = decryptMfaSecret(dbUser.mfaSecret);
+      } catch (error) {
+        console.error('[MFA Verification Denied]', {
+          uid: req.user!.uid,
+          code: error instanceof Error ? error.message : 'MFA_SECRET_DECRYPTION_FAILED',
+        });
+        return res.status(503).json({
+          error: 'MFA verification is unavailable because the stored secret could not be decrypted.',
+          code: 'MFA_SECRET_UNAVAILABLE',
+        });
       }
 
       const isValid = verifyTOTP(secretToVerify, code);
@@ -1381,10 +1453,12 @@ async function startServer() {
       // ONLY upon successful server-side TOTP verification, set mfaEnabled: 1 and mfaSecret in database
       await db.update(usersTable)
         .set({
-          mfaEnabled: 1,
-          mfaSecret: secretToVerify
+          mfaEnabled: 1
         })
-        .where(eq(usersTable.uid, req.user!.uid));
+        .where(and(
+          eq(usersTable.uid, req.user!.uid),
+          eq(usersTable.tenantId, req.user!.tenantId),
+        ));
 
       await addAuditLogBlock(req.user!.email, 'MFA Server Verified', req.ip || '127.0.0.1', 'Success', 'Server-side TOTP HMAC-SHA1 verification succeeded; MFA activated.', req.user!.tenantId);
 

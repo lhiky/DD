@@ -16,58 +16,6 @@ interface OnboardingWizardProps {
   onOnboardingComplete: (updatedUser: any) => void;
 }
 
-// Base32 decode and standard RFC 6238 TOTP generator
-async function generateTOTPCode(base32Secret: string, timeOffset: number = 0): Promise<string> {
-  const cleanSecret = base32Secret.replace(/\s+/g, '').toUpperCase();
-  const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let bits = '';
-  for (let i = 0; i < cleanSecret.length; i++) {
-    const val = base32chars.indexOf(cleanSecret.charAt(i));
-    if (val === -1) continue;
-    bits += val.toString(2).padStart(5, '0');
-  }
-  const bytes = new Uint8Array(Math.floor(bits.length / 8));
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(bits.substring(i * 8, i * 8 + 8), 2);
-  }
-
-  const counter = Math.floor(Date.now() / 1000 / 30) + timeOffset;
-  const counterBuffer = new ArrayBuffer(8);
-  const counterView = new DataView(counterBuffer);
-  counterView.setUint32(0, 0, false);
-  counterView.setUint32(4, counter, false);
-
-  const cryptoKey = await window.crypto.subtle.importKey(
-    'raw',
-    bytes,
-    { name: 'HMAC', hash: 'SHA-1' },
-    false,
-    ['sign']
-  );
-  const signature = await window.crypto.subtle.sign('HMAC', cryptoKey, counterBuffer);
-  const hmac = new Uint8Array(signature);
-
-  const offset = hmac[hmac.length - 1] & 0x0f;
-  const binary =
-    ((hmac[offset] & 0x7f) << 24) |
-    ((hmac[offset + 1] & 0xff) << 16) |
-    ((hmac[offset + 2] & 0xff) << 8) |
-    (hmac[offset + 3] & 0xff);
-
-  return (binary % 1000000).toString().padStart(6, '0');
-}
-
-async function verifyTOTPCode(base32Secret: string, inputCode: string): Promise<boolean> {
-  const code = inputCode.trim();
-  if (!/^\d{6}$/.test(code)) return false;
-  
-  for (const offset of [0, -1, 1]) {
-    const valid = await generateTOTPCode(base32Secret, offset);
-    if (valid === code) return true;
-  }
-  return false;
-}
-
 export default function OnboardingWizard({ user, onOnboardingComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [loading, setLoading] = useState(false);
@@ -80,19 +28,8 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
   const [clientCount, setClientCount] = useState('12');
   const [primaryUseCase, setPrimaryUseCase] = useState('NIST Mapping & Risk Assessments');
   const [mfaEnabled, setMfaEnabled] = useState(true);
-  const [mfaSecret, setMfaSecret] = useState(() => {
-    // Generate a cryptographically secure Base32 TOTP secret key
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    const randomBytes = new Uint8Array(16);
-    if (typeof window !== 'undefined' && window.crypto) {
-      window.crypto.getRandomValues(randomBytes);
-    }
-    let secret = '';
-    for (let i = 0; i < 16; i++) {
-      secret += chars.charAt(randomBytes[i] % chars.length);
-    }
-    return secret.match(/.{1,4}/g)?.join(' ') || secret;
-  });
+  const [mfaSecret, setMfaSecret] = useState('');
+  const [mfaProvisioningUri, setMfaProvisioningUri] = useState('');
 
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [totpCodeInput, setTotpCodeInput] = useState<string>('');
@@ -101,14 +38,30 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
   const [totpError, setTotpError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (mfaEnabled && mfaSecret) {
-      const cleanSecret = mfaSecret.replace(/\s+/g, '');
-      const otpauth = `otpauth://totp/SoftwarePassportRegistry:${encodeURIComponent(companyName || 'User')}?secret=${cleanSecret}&issuer=SoftwarePassportRegistry`;
-      QRCode.toDataURL(otpauth, { margin: 1, width: 160 })
+    if (mfaEnabled && mfaProvisioningUri) {
+      QRCode.toDataURL(mfaProvisioningUri, { margin: 1, width: 160 })
         .then(url => setQrDataUrl(url))
         .catch(err => console.error('Failed to generate local QR code:', err));
     }
-  }, [mfaEnabled, mfaSecret, companyName]);
+  }, [mfaEnabled, mfaProvisioningUri]);
+
+  useEffect(() => {
+    if (step !== 3 || !mfaEnabled || mfaProvisioningUri) return;
+    let cancelled = false;
+    apiFetch('/api/organization/security/enroll-mfa', { method: 'POST' })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to begin MFA enrollment.');
+        if (!cancelled) {
+          setMfaSecret(data.secret);
+          setMfaProvisioningUri(data.provisioningUri);
+        }
+      })
+      .catch(err => {
+        if (!cancelled) setTotpError(err?.message || 'Failed to begin MFA enrollment.');
+      });
+    return () => { cancelled = true; };
+  }, [step, mfaEnabled, mfaProvisioningUri]);
 
   const handleVerifyTotp = async () => {
     setTotpVerifying(true);
@@ -117,10 +70,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
       const res = await apiFetch('/api/organization/security/verify-mfa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: totpCodeInput,
-          secret: mfaSecret
-        })
+        body: JSON.stringify({ code: totpCodeInput })
       });
       const data = await res.json();
       if (res.ok && data.success) {

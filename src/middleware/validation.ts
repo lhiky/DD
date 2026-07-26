@@ -71,8 +71,7 @@ export const teamRoleSchema = z.object({
 });
 
 export const verifyMfaSchema = z.object({
-  code: z.string().trim().regex(/^\d{6}$/, 'must be a 6-digit code'),
-  secret: z.string().trim().optional()
+  code: z.string().trim().regex(/^\d{6}$/, 'must be a 6-digit code')
 });
 
 export const orgSecuritySchema = z.object({

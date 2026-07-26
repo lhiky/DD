@@ -11,7 +11,7 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   uid: text('uid').notNull().unique(), // Firebase Auth string UID
   email: text('email').notNull(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'), // Default tenant_id
+  tenantId: text('tenant_id').notNull(),
   role: text('role').notNull().default('Viewer'), // RBAC Roles: Owner, Admin, Technician, Viewer, Client
   companyName: text('company_name'),
   roleTitle: text('role_title'),
@@ -28,7 +28,7 @@ export const users = pgTable('users', {
 // 2. Clients Table (with tenant_id isolation)
 export const clients = pgTable('clients', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'), // Tenant isolation key
+  tenantId: text('tenant_id').notNull(),
   name: text('name').notNull(),
   domain: text('domain').notNull(),
   industry: text('industry').notNull(),
@@ -50,7 +50,7 @@ export const clients = pgTable('clients', {
 // 3. Passports Table (with tenant_id isolation)
 export const passports = pgTable('passports', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'), // Tenant isolation key
+  tenantId: text('tenant_id').notNull(),
   clientId: text('client_id'),
   name: text('name').notNull(),
   version: text('version').notNull(),
@@ -73,7 +73,7 @@ export const passports = pgTable('passports', {
 // 4. Scans Table (with tenant_id isolation)
 export const scans = pgTable('scans', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   targetName: text('target_name').notNull(),
   scanType: text('scan_type').notNull(),
   triggeredBy: text('triggered_by').notNull(),
@@ -87,7 +87,7 @@ export const scans = pgTable('scans', {
 // 5. Alerts Table (with tenant_id isolation)
 export const alerts = pgTable('alerts', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   title: text('title').notNull(),
   severity: text('severity').notNull(),
   category: text('category').notNull(),
@@ -292,7 +292,7 @@ export const credentialReferences = pgTable('credential_references', {
 // 6. Integrations Table (with tenant_id isolation)
 export const integrations = pgTable('integrations', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   name: text('name').notNull(),
   category: text('category').notNull(),
   icon: text('icon').notNull(),
@@ -305,7 +305,7 @@ export const integrations = pgTable('integrations', {
 // 7. Billing Table (with tenant_id isolation and Stripe tracking)
 export const billing = pgTable('billing', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   clientName: text('client_name').notNull(),
   activePassportsCount: integer('active_passports_count').notNull().default(0),
   pricePerPassport: integer('price_per_passport').notNull().default(45),
@@ -319,7 +319,7 @@ export const billing = pgTable('billing', {
 // 8. Compliance Schedules Table (with tenant_id isolation)
 export const complianceSchedules = pgTable('compliance_schedules', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   clientId: text('client_id').notNull(),
   frequency: text('frequency').notNull(), // Daily, Weekly, Monthly
   targetEmail: text('target_email').notNull(),
@@ -332,7 +332,7 @@ export const complianceSchedules = pgTable('compliance_schedules', {
 // 9. Pilot Organizations Table
 export const pilotOrganizations = pgTable('pilot_organizations', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   name: text('name').notNull(),
   industry: text('industry').notNull(),
   website: text('website'),
@@ -346,7 +346,7 @@ export const pilotOrganizations = pgTable('pilot_organizations', {
 // 10. Pilot Contacts Table
 export const pilotContacts = pgTable('pilot_contacts', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   name: text('name').notNull(),
   email: text('email').notNull(),
@@ -358,7 +358,7 @@ export const pilotContacts = pgTable('pilot_contacts', {
 // 11. Pilot Applications Table
 export const pilotApplications = pgTable('pilot_applications', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   submittedAt: text('submitted_at').notNull(),
   mainChallenges: text('main_challenges').notNull(),
@@ -370,7 +370,7 @@ export const pilotApplications = pgTable('pilot_applications', {
 // 12. Pilot Projects Table
 export const pilotProjects = pgTable('pilot_projects', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   name: text('name').notNull(),
   status: text('status').notNull().default('Planning'),
@@ -382,7 +382,7 @@ export const pilotProjects = pgTable('pilot_projects', {
 // 13. Pilot Software Assets Table
 export const pilotSoftwareAssets = pgTable('pilot_software_assets', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   name: text('name').notNull(),
   vendor: text('vendor').notNull(),
@@ -396,7 +396,7 @@ export const pilotSoftwareAssets = pgTable('pilot_software_assets', {
 // 14. Pilot Passport Reports Table
 export const pilotPassportReports = pgTable('pilot_passport_reports', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   assetId: text('asset_id').notNull(),
   reportType: text('report_type').notNull(), // e.g. 'NIST Mapping', 'Risk Assessment'
@@ -407,7 +407,7 @@ export const pilotPassportReports = pgTable('pilot_passport_reports', {
 // 15. Pilot Feedback Items Table
 export const pilotFeedbackItems = pgTable('pilot_feedback_items', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   contactName: text('contact_name').notNull(),
   comment: text('comment').notNull(),
@@ -418,7 +418,7 @@ export const pilotFeedbackItems = pgTable('pilot_feedback_items', {
 // 16. Pilot Meetings Table
 export const pilotMeetings = pgTable('pilot_meetings', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   title: text('title').notNull(),
   scheduledAt: text('scheduled_at').notNull(),
@@ -429,7 +429,7 @@ export const pilotMeetings = pgTable('pilot_meetings', {
 // 17. Pilot Feature Requests Table
 export const pilotFeatureRequests = pgTable('pilot_feature_requests', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   title: text('title').notNull(),
   description: text('description'),
@@ -440,7 +440,7 @@ export const pilotFeatureRequests = pgTable('pilot_feature_requests', {
 // 18. Pilot Conversion Tracking Table
 export const pilotConversionTracking = pgTable('pilot_conversion_tracking', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   orgId: text('org_id').notNull(),
   convertedAt: text('converted_at'),
   dealValue: integer('deal_value').notNull().default(0),
@@ -452,7 +452,7 @@ export const pilotConversionTracking = pgTable('pilot_conversion_tracking', {
 // 19. Agent Jobs Table (AI Agent System Async Jobs)
 export const agentJobs = pgTable('agent_jobs', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   agentId: text('agent_id').notNull(), // e.g. 'identity-ai', 'security-ai'
   passportId: text('passport_id').notNull(),
   jobType: text('job_type').notNull(), // e.g. 'compliance_scan', 'vulnerability_remediation'
@@ -483,7 +483,7 @@ export const agentLogs = pgTable('agent_logs', {
 // 21. Scan Schedules Table
 export const scanSchedules = pgTable('scan_schedules', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   assetId: text('asset_id').notNull(),
   assetHostName: text('asset_host_name').notNull(),
   assetType: text('asset_type').notNull(),
@@ -499,7 +499,7 @@ export const scanSchedules = pgTable('scan_schedules', {
 // 22. Evidence Items Table (Traceable pieces of cryptographic and audit proof)
 export const evidenceItems = pgTable('evidence_items', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   assetId: text('asset_id').notNull(), // Links to passports.id
   name: text('name').notNull(),
   type: text('type').notNull(), // Signature, Audit Report, Build Log, Security Scan, Attestation
@@ -515,7 +515,7 @@ export const evidenceItems = pgTable('evidence_items', {
 // 23. Scan Findings Table (Granular findings detected during scanning)
 export const scanFindings = pgTable('scan_findings', {
   id: text('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   assetId: text('asset_id').notNull(), // Links to passports.id
   jobId: text('job_id').notNull(), // Links to agent_jobs.id
   severity: text('severity').notNull(), // Critical, High, Medium, Low
@@ -577,7 +577,7 @@ export const repositoryScanSources = pgTable('repository_scan_sources', {
 // 24. Cryptographic Tamper-Proof Audit Trail Table (Postgres-persisted Ledger blocks)
 export const auditTrail = pgTable('audit_trail', {
   id: serial('id').primaryKey(),
-  tenantId: text('tenant_id').notNull().default('tenant-default'),
+  tenantId: text('tenant_id').notNull(),
   action: text('action').notNull(),
   timestamp: text('timestamp').notNull(),
   actor: text('actor').notNull(),

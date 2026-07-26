@@ -53,14 +53,16 @@ describe('collector worker leases', () => {
 
   it('heartbeats only a job owned by the worker', async () => {
     const pool = { query: vi.fn().mockResolvedValue({ rows: [{ id: 'j1', lease_expires_at: 'later' }] }) };
-    await heartbeatCollectorJob(pool as any, 'j1', 'worker-a');
+    await heartbeatCollectorJob(pool as any, 'j1', 't1', 'worker-a');
     expect(pool.query.mock.calls[0][0]).toContain("state IN ('claimed','running')");
     expect(pool.query.mock.calls[0][0]).toContain('lease_owner = $2');
+    expect(pool.query.mock.calls[0][0]).toContain('tenant_id = $5');
+    expect(pool.query.mock.calls[0][1][4]).toBe('t1');
   });
 
   it('rejects a heartbeat after lease ownership is lost', async () => {
     const pool = { query: vi.fn().mockResolvedValue({ rows: [] }) };
-    await expect(heartbeatCollectorJob(pool as any, 'j1', 'worker-b')).rejects.toThrow('JOB_LEASE_LOST');
+    await expect(heartbeatCollectorJob(pool as any, 'j1', 't1', 'worker-b')).rejects.toThrow('JOB_LEASE_LOST');
   });
 
   it('recovers expired leases and dead-letters exhausted jobs', async () => {
@@ -72,9 +74,11 @@ describe('collector worker leases', () => {
 
   it('uses a safe failure and bounded retry state', async () => {
     const pool = { query: vi.fn().mockResolvedValue({ rows: [{ id: 'j1', state: 'dead_lettered' }] }) };
-    const job = { id: 'j1', attempt_number: 3, maximum_attempts: 3 } as any;
+    const job = { id: 'j1', tenant_id: 't1', attempt_number: 3, maximum_attempts: 3 } as any;
     expect((await recordCollectorFailure(pool as any, job, 'worker-a', 'TIMEOUT', 'Timed out')).state)
       .toBe('dead_lettered');
     expect(pool.query.mock.calls[0][0]).not.toContain('stack');
+    expect(pool.query.mock.calls[0][0]).toContain('tenant_id = $7');
+    expect(pool.query.mock.calls[0][1][6]).toBe('t1');
   });
 });
