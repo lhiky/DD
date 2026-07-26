@@ -343,7 +343,7 @@ export default function ReportsView({ clients = [], userRole = 'Viewer' }: Repor
     setIsJsonExporting(true);
 
     try {
-      // Fetch verified historical compliance audit logs from server API
+      // Fetch stored historical audit-chain records from the server API.
       let auditLogs: any[] = [];
       try {
         const res = await apiFetch('/api/auth/audit-chain');
@@ -355,7 +355,7 @@ export default function ReportsView({ clients = [], userRole = 'Viewer' }: Repor
         console.warn('[Audit Chain API Fetch Warning]:', err);
       }
 
-      // If API log list is empty or offline, construct structured compliance history from tenant activity timeline
+      // Activity entries remain user/system records and are not reclassified as verified.
       if (auditLogs.length === 0 && selectedClient.activityTimeline) {
         auditLogs = selectedClient.activityTimeline.map((item) => ({
           logId: item.id,
@@ -364,7 +364,7 @@ export default function ReportsView({ clients = [], userRole = 'Viewer' }: Repor
           actor: item.user,
           severity: item.severity,
           description: item.description,
-          verificationStatus: 'CRYPTOGRAPHICALLY_VERIFIED'
+          evidenceStatus: 'RECORDED_NOT_INDEPENDENTLY_VERIFIED'
         }));
       }
 
@@ -378,7 +378,7 @@ export default function ReportsView({ clients = [], userRole = 'Viewer' }: Repor
           organizationDomain: selectedClient.domain,
           industryVertical: selectedClient.industry,
           subscriptionTier: selectedClient.subscriptionTier,
-          verificationStatus: "CRYPTOGRAPHICALLY_VERIFIED",
+          evidenceStatus: "MIXED_REVIEW_INDIVIDUAL_RECORDS",
           systemIssuer: "Software Passport Registry (SPR)",
           totalAuditRecords: auditLogs.length
         },

@@ -156,7 +156,7 @@ const _removedLegacyProfileProjection = (p: SoftwarePassport) => {
     why = [
       'Transitive CVE-2023-35116 is open in Jackson-databind subcomponents',
       'Requires sandboxed isolation or immediate upgrade to v2.22+',
-      'Lacks modern SLSA build provenance attestations',
+      'No supported build-provenance evidence is attached',
       'Relies on older deprecated Java 8 runtimes',
       'High operational dependency age delta'
     ];
@@ -546,7 +546,7 @@ export default function DashboardView({
   const graphNodes = {
     pub: { title: 'Publisher record', status: 'Evidence review required', details: 'Publisher identity must be assessed from evidence attached to the selected passport.' },
     repo: { title: 'Repository record', status: 'Evidence review required', details: 'Review stored build and repository evidence before drawing an integrity conclusion.' },
-    dep: { title: 'Dependency Subcomponent Ledger', status: 'Direct & Transitive Audit Passed', details: '98% of deep subcomponent packages contain cryptographically signed author keys, shielding against dependency confusion.' },
+    dep: { title: 'Dependency records', status: 'Evidence review required', details: 'Review stored direct and transitive component records; signature coverage is not inferred.' },
     seal: { title: 'Evidence status', status: 'Review required', details: 'SPR displays the status recorded on each evidence item and does not independently certify regulatory acceptance.' }
   };
 
@@ -1715,7 +1715,7 @@ export default function DashboardView({
                   <span className="text-[10px] text-slate-500 font-mono font-bold uppercase">Client Trust Trend</span>
                   <span className="text-slate-400 text-[10px] font-bold font-mono">No historical comparison</span>
                 </div>
-                {/* Simulated clean chart line */}
+                {/* Decorative chart line; it does not encode measurements. */}
                 <div className="h-20 w-full mt-3 flex items-end">
                   <svg className="w-full h-full overflow-visible" viewBox="0 0 200 80">
                     <defs>
