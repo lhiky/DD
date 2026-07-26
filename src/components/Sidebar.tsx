@@ -31,7 +31,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   Lock,
-  Layers
+  Layers,
+  Handshake
 } from 'lucide-react';
 import { Client } from '../types';
 
@@ -108,6 +109,13 @@ export default function Sidebar({
       {
         title: "Ecosystem Marketplace",
         items: [
+          {
+            id: 'partner-program',
+            label: 'MSP Partner Program',
+            icon: Handshake,
+            badge: 'Pilot',
+            badgeColor: 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/30 font-bold'
+          },
           { 
             id: 'marketplace', 
             label: 'Extensions Store', 
@@ -276,4 +284,3 @@ export default function Sidebar({
     </aside>
   );
 }
-

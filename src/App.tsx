@@ -9,6 +9,7 @@ import { Client, SoftwarePassport, Vendor, Scan, Alert, Integration, AlertStatus
 
 // Import Modular Views
 import Sidebar from './components/Sidebar';
+import PartnerProgramView from './components/PartnerProgramView';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import ClientsView from './components/ClientsView';
@@ -1072,6 +1073,8 @@ export default function App() {
               onNavigateTab={handleNavigateWithItem}
             />
           )}
+
+          {activeTab === 'partner-program' && <PartnerProgramView />}
 
           {activeTab === 'integrations' && (
             <IntegrationsView
