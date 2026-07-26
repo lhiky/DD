@@ -150,6 +150,16 @@ export interface Client {
   complianceStatus: ComplianceStandard[];
   teamMembers: TeamMember[];
   activityTimeline: ActivityLog[];
+  isDemo?: number;
+}
+
+export interface TenantBranding {
+  organizationName: string;
+  reportTitle: string;
+  primaryColor: string;
+  logoDataUrl?: string;
+  supportEmail: string;
+  reportDisclaimer: string;
 }
 
 export interface VendorAudit {

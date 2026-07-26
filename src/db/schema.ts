@@ -45,6 +45,21 @@ export const clients = pgTable('clients', {
   complianceStatus: text('compliance_status').notNull().default('[]'), // JSON stringified array
   teamMembers: text('team_members').notNull().default('[]'), // JSON stringified array
   activityTimeline: text('activity_timeline').notNull().default('[]'), // JSON stringified array
+  isDemo: integer('is_demo').notNull().default(0),
+});
+
+// Tenant-owned presentation settings. A single row per tenant is enforced by
+// the primary key; authorization and RLS both bind reads/writes to tenant_id.
+export const tenantBranding = pgTable('tenant_branding', {
+  tenantId: text('tenant_id').primaryKey(),
+  organizationName: text('organization_name').notNull().default(''),
+  reportTitle: text('report_title').notNull().default('Software Supply Chain Evidence Report'),
+  primaryColor: text('primary_color').notNull().default('#4f46e5'),
+  logoDataUrl: text('logo_data_url'),
+  supportEmail: text('support_email').notNull().default(''),
+  reportDisclaimer: text('report_disclaimer').notNull().default('This report summarizes stored and user-declared evidence. It does not independently certify legal or regulatory compliance.'),
+  updatedBy: text('updated_by').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 // 3. Passports Table (with tenant_id isolation)

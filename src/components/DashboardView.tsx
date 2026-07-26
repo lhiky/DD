@@ -176,7 +176,7 @@ const _removedLegacyProfileProjection = (p: SoftwarePassport) => {
       'High core codebase stability and performance',
       'RSALv2 / SSPLv1 licensing requires hosting policy review',
       'Strong publisher reputation index',
-      'Cryptographically verified build signature'
+      'Build-signature evidence requires review'
     ];
   } else if (isKube) {
     trustRating = 'A';
@@ -194,7 +194,7 @@ const _removedLegacyProfileProjection = (p: SoftwarePassport) => {
       'Excellent compliance with industry-standard benchmarks',
       '1 open CVE requires patch action (CVE-2024-21626 Ingress leak)',
       'Highly active community maintainer directory',
-      'SLSA Level 3 certified build chain'
+      'Build provenance evidence requires review'
     ];
   } else if (isNginx) {
     trustRating = 'AAA';
@@ -210,8 +210,8 @@ const _removedLegacyProfileProjection = (p: SoftwarePassport) => {
     why = [
       'Verified publisher keys (Nginx Inc / F5)',
       'Highly hardened container image (Alpine release)',
-      'SLSA Level 3 build provenance certified',
-      'Zero open critical or high CVEs',
+      'Build provenance evidence requires review',
+      'No critical or high findings are stored in this record',
       'Verified open-source license compliance'
     ];
   }
@@ -228,7 +228,7 @@ const _removedLegacyProfileProjection = (p: SoftwarePassport) => {
     },
     signals,
     evidence: {
-      aiExplanation: p.aiSummary || "This asset exhibits stable codebase metrics, certified signature validations, and standard software bill of materials hygiene.",
+      aiExplanation: p.aiSummary || 'No model-generated explanation is stored for this passport.',
       securityScans: `Overall trust score is ${p.overallScore}/100. Security score stands at ${p.securityScore}/100, and Compliance score is ${p.complianceScore}/100. verified against active CVE definitions.`,
       sbom: p.sbom ? p.sbom.map((s: any) => ({
         name: s.name,
@@ -241,7 +241,7 @@ const _removedLegacyProfileProjection = (p: SoftwarePassport) => {
       codeQuality: `Verified test compliance. Direct license types marked as ${p.licenseType}.`,
       complianceDocs: [
         `NIST Compliance alignment (${p.complianceScore}%)`,
-        `License Compliant: ${p.licenseType}`
+        `Recorded license: ${p.licenseType}`
       ],
       auditHistory: p.timeline ? p.timeline.map((t: any) => `${t.date}: ${t.event} - ${t.details}`) : [
         "Registered inside Software Passport Registry ledgers successfully"
@@ -328,7 +328,7 @@ export default function DashboardView({
         const logs = [
           'Connecting to Cryptographic Audit Chain for tenant validation...',
           `Validated ${data.totalBlocksVerified} audit blocks in chain.`,
-          `Cryptographic chain integrity: ${data.isValid ? 'VERIFIED GENUINE' : 'TAMPER DETECTED'}`
+          `Stored audit-chain hash comparison: ${data.isValid ? 'MATCHED' : 'MISMATCH DETECTED'}`
         ];
         if (data.details && data.details.length > 0) {
           data.details.slice(0, 5).forEach((d: any) => {
@@ -544,10 +544,10 @@ export default function DashboardView({
   const [selectedGraphNode, setSelectedGraphNode] = useState<'pub' | 'repo' | 'dep' | 'seal'>('seal');
 
   const graphNodes = {
-    pub: { title: 'Verified Publisher Node', status: 'Cryptographically Verified Identity', details: 'Nginx Inc. / PostgreSQL Global Core PGP Identity Keys fully matched against Decentralized Public Key Registers.' },
-    repo: { title: 'Repository Pipeline Gate', status: 'CI/CD Immutable Build Artifacts', details: 'No alterations identified since pipeline build. Build chain validated via SLSA Levels 3/4 evidence logs.' },
+    pub: { title: 'Publisher record', status: 'Evidence review required', details: 'Publisher identity must be assessed from evidence attached to the selected passport.' },
+    repo: { title: 'Repository record', status: 'Evidence review required', details: 'Review stored build and repository evidence before drawing an integrity conclusion.' },
     dep: { title: 'Dependency Subcomponent Ledger', status: 'Direct & Transitive Audit Passed', details: '98% of deep subcomponent packages contain cryptographically signed author keys, shielding against dependency confusion.' },
-    seal: { title: 'Authenticity Seal Certificate', status: 'SPR Holographic Authenticity Verified', details: 'Holographic, dual-hash blockchain-anchored registration provides a defensible, certified trust record acceptable for Defense, Banking, and Global Regulators.' }
+    seal: { title: 'Evidence status', status: 'Review required', details: 'SPR displays the status recorded on each evidence item and does not independently certify regulatory acceptance.' }
   };
 
   // 6. Private Founder Intelligence Center Passcode Security
@@ -871,7 +871,7 @@ export default function DashboardView({
               </span>
             </div>
             <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 px-3 py-1 rounded-full text-[9px] font-mono font-bold uppercase tracking-wider">
-              Verification Grade: SLSA LEVEL 4
+              Evidence status: review required
             </div>
           </div>
 
@@ -994,7 +994,7 @@ export default function DashboardView({
                 )}
                 {verificationLogs.length === 0 && (
                   <div className="text-[10px] font-mono text-zinc-500 italic">
-                    Click trigger to execute absolute cryptographic seal verification chain.
+                    Compare the hashes stored in this tenant's audit-chain records.
                   </div>
                 )}
               </AnimatePresence>
@@ -1017,7 +1017,7 @@ export default function DashboardView({
               ) : verificationResult === 'success' ? (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>VERIFIED GENUINE</span>
+                  <span>HASHES MATCHED</span>
                 </>
               ) : (
                 <>
@@ -1296,7 +1296,7 @@ export default function DashboardView({
 
             <div className="pt-4 border-t border-slate-200/60 dark:border-zinc-800 text-[10px] font-mono text-slate-400 flex items-center gap-1.5">
               <Database className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Immutable Ledger Link: Block #4,142</span>
+              <span>Legacy visualization disabled</span>
             </div>
           </div>
 
@@ -1933,7 +1933,7 @@ export default function DashboardView({
                               : 'text-amber-600 dark:text-amber-400'
                           }`}
                         >
-                          {isMitigated ? 'SLA Compliant' : `${pred.daysRemaining} days remaining`}
+                          {isMitigated ? 'Recorded as mitigated' : `${pred.daysRemaining} days remaining`}
                         </span>
                       </div>
                     </div>

@@ -104,6 +104,7 @@ export default function Sidebar({
           { id: 'scans', label: '1. Code Discovery', icon: Radar },
           { id: 'assets', label: '2. Asset Inventory', icon: Server },
           { id: 'trust-os', label: '3. Trust Graph & Lineage', icon: Cpu },
+          { id: 'cra-evidence', label: 'CRA Evidence Map', icon: ClipboardCheck },
         ]
       },
       {
@@ -133,6 +134,7 @@ export default function Sidebar({
         title: "Governance & System",
         items: [
           { id: 'settings', label: 'RBAC & Configurations', icon: Settings },
+          { id: 'sales-brief', label: '90-Second Brief', icon: FileBarChart2 },
           ...(userRole === 'Owner' ? [{ id: 'founder', label: 'Founder Admin Center', icon: ShieldCheck, badge: 'Owner', badgeColor: 'bg-amber-500 text-white font-bold' }] : [])
         ]
       }

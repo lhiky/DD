@@ -78,6 +78,18 @@ export const orgSecuritySchema = z.object({
   mfaEnabled: z.boolean()
 });
 
+export const tenantBrandingSchema = z.object({
+  organizationName: z.string().trim().max(120),
+  reportTitle: z.string().trim().min(1).max(160),
+  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be a six-digit hex color'),
+  logoDataUrl: z.string().max(750_000).refine(
+    value => value === '' || /^data:image\/(png|jpeg|webp);base64,/.test(value),
+    'must be an empty value or a PNG, JPEG, or WebP data URL'
+  ).optional(),
+  supportEmail: z.union([z.literal(''), emailSchema]),
+  reportDisclaimer: z.string().trim().min(20).max(600)
+});
+
 // --- Clients ---
 export const createClientSchema = z.object({
   name: nonEmptyString,

@@ -9,7 +9,7 @@ import {
   Building2, ShieldCheck, ShieldAlert, Award, FileSpreadsheet, Lock, Sparkles, Database, FileDown,
   Palette, Printer, SlidersHorizontal, Settings, Edit3, CheckCircle2, Upload, X, Layers, Eye, FileCode
 } from 'lucide-react';
-import { Client } from '../types';
+import { Client, TenantBranding } from '../types';
 
 const REPORT_TEMPLATES = [
   { id: 'rep-ceo', name: 'Executive Evidence Summary', type: 'Executive Summary', description: 'Summarizes stored software metrics, evidence status, and items requiring leadership review.', frequency: 'Monthly' },
@@ -22,9 +22,10 @@ import { apiFetch } from '../utils/apiClient';
 
 interface ReportsViewProps {
   clients?: Client[];
+  userRole?: string;
 }
 
-export default function ReportsView({ clients = [] }: ReportsViewProps) {
+export default function ReportsView({ clients = [], userRole = 'Viewer' }: ReportsViewProps) {
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [downloadReadyId, setDownloadReadyId] = useState<string | null>(null);
   
@@ -43,6 +44,8 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
   const [executiveSummary, setExecutiveSummary] = useState('');
   const [includeSignatureLine, setIncludeSignatureLine] = useState(true);
   const [isCompilingCoBranded, setIsCompilingCoBranded] = useState(false);
+  const [brandingState, setBrandingState] = useState<'loading' | 'ready' | 'saving' | 'error'>('loading');
+  const [brandingMessage, setBrandingMessage] = useState('');
 
   // New states for customizable compliance modules and assets selection
   const [uploadedLogo, setUploadedLogo] = useState<string | null>(null);
@@ -51,6 +54,53 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
   const [includeInventory, setIncludeInventory] = useState(true);
   const [includeComplianceChecklist, setIncludeComplianceChecklist] = useState(true);
   const [selectedAssetNames, setSelectedAssetNames] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    apiFetch('/api/tenant/branding')
+      .then(async response => {
+        if (!response.ok) throw new Error('Branding settings could not be loaded.');
+        return response.json();
+      })
+      .then((branding: TenantBranding) => {
+        setMspName(branding.organizationName || '');
+        setBrandColor(branding.primaryColor || '#4f46e5');
+        setReportTitle(branding.reportTitle || 'Software Supply Chain Evidence Report');
+        setUploadedLogo(branding.logoDataUrl || null);
+        setBrandingState('ready');
+      })
+      .catch(error => {
+        console.error('[Tenant Branding Load Error]', error);
+        setBrandingMessage('Branding could not be loaded. Retry before exporting a branded report.');
+        setBrandingState('error');
+      });
+  }, []);
+
+  const saveTenantBranding = async () => {
+    setBrandingState('saving');
+    setBrandingMessage('');
+    try {
+      const response = await apiFetch('/api/tenant/branding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationName: mspName,
+          reportTitle,
+          primaryColor: brandColor,
+          logoDataUrl: uploadedLogo || '',
+          supportEmail: '',
+          reportDisclaimer: 'This report summarizes stored and user-declared evidence. It does not independently certify legal or regulatory compliance.'
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || body.message || 'Branding could not be saved.');
+      setBrandingState('ready');
+      setBrandingMessage('Tenant branding saved.');
+    } catch (error: any) {
+      console.error('[Tenant Branding Save Error]', error);
+      setBrandingState('error');
+      setBrandingMessage(error.message || 'Branding could not be saved.');
+    }
+  };
 
   // Synchronize selected assets when client changes
   React.useEffect(() => {
@@ -100,10 +150,8 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
   const handleGenerateReport = (id: string) => {
     setGeneratingId(id);
     setDownloadReadyId(null);
-    setTimeout(() => {
-      setGeneratingId(null);
-      setDownloadReadyId(id);
-    }, 1500);
+    setGeneratingId(null);
+    setDownloadReadyId(id);
   };
 
   const selectedClient = clients.find(c => c.id === selectedClientId);
@@ -112,10 +160,11 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
   const handleDynamicPdfGenerate = () => {
     if (!selectedClient) return;
     setIsDynamicCompiling(true);
-    setTimeout(() => {
+    try {
       generateClientCompliancePDF(selectedClient);
+    } finally {
       setIsDynamicCompiling(false);
-    }, 1200);
+    }
   };
 
   // High-fidelity structured CSV compiler with dynamic 30-day compliance log fetch
@@ -148,9 +197,9 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                   timestamp: b.timestamp || new Date().toISOString(),
                   eventType: b.actionType || 'AUDIT_LOG',
                   operator: b.userEmail || 'System',
-                  ip: b.ip || '127.0.0.1',
-                  outcome: b.outcome || 'Success',
-                  description: b.details || 'System audit action recorded'
+                  ip: b.ip || '',
+                  outcome: b.outcome || 'Unknown',
+                  description: b.details || 'No event description stored'
                 };
               })
               .filter((log) => {
@@ -174,8 +223,8 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
             timestamp: item.timestamp,
             eventType: item.eventType,
             operator: item.user,
-            ip: '10.0.4.12',
-            outcome: String(item.severity).toLowerCase().includes('high') || String(item.severity).toLowerCase().includes('critical') ? 'Warning' : 'Success',
+            ip: '',
+            outcome: String(item.severity).toLowerCase().includes('high') || String(item.severity).toLowerCase().includes('critical') ? 'Warning' : 'Recorded',
             description: item.description
           }));
 
@@ -341,7 +390,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
           activePassportsCount: selectedClient.softwareInventory?.length || 0,
           teamMemberCount: selectedClient.teamMembers?.length || 0
         },
-        certifiedComplianceFrameworks: selectedClient.complianceStatus || [],
+        recordedComplianceFrameworks: selectedClient.complianceStatus || [],
         softwareInventoryPassports: selectedClient.softwareInventory || [],
         verifiedHistoricalAuditLogs: auditLogs
       };
@@ -549,15 +598,20 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                 <Palette className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-slate-800 font-display">MSP Co-Branded Software Trust Report Designer</h2>
+                <h2 className="text-sm font-bold text-slate-800 font-display">Tenant Report Branding & Evidence Template</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Prepare a client-facing evidence report for {selectedClient.name}. Branding applies to this export only and is not yet saved as a tenant-wide white-label setting.
+                  Prepare a client-facing evidence report for {selectedClient.name}. Saved branding is reused for this tenant's future exports.
                 </p>
               </div>
             </div>
-            <span className="px-2.5 py-0.5 rounded text-[8px] font-mono font-bold bg-slate-100 border border-slate-200 text-slate-600 uppercase tracking-wider self-start sm:self-center">
-              Active PDF Engine
-            </span>
+            <div className="flex flex-col items-end gap-2">
+              {(userRole === 'Owner' || userRole === 'Admin') && (
+                <button onClick={saveTenantBranding} disabled={brandingState === 'saving'} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
+                  {brandingState === 'saving' ? 'Saving…' : 'Save tenant branding'}
+                </button>
+              )}
+              {brandingMessage && <span className={`text-[10px] ${brandingState === 'error' ? 'text-rose-600' : 'text-emerald-600'}`}>{brandingMessage}</span>}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 text-xs">
@@ -888,7 +942,7 @@ export default function ReportsView({ clients = [] }: ReportsViewProps) {
                           <img src={uploadedLogo} alt="MSP Custom Logo" className="h-6 w-auto max-w-[48px] object-contain" />
                         </div>
                       ) : (
-                        <div className="absolute right-3 top-3 border border-white/30 rounded-full w-7 h-7 flex items-center justify-center bg-white/10" title="Default Secure Seal">
+                        <div className="absolute right-3 top-3 border border-white/30 rounded-full w-7 h-7 flex items-center justify-center bg-white/10" title="Default report mark">
                           <span className="text-[5px] font-bold tracking-tighter text-white/90">SEAL</span>
                         </div>
                       )}

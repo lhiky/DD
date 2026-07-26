@@ -37,7 +37,8 @@ import {
   trustObservations as trustObservationsTable,
   trustObservationChanges as trustObservationChangesTable,
   pilotOrganizations as pilotOrganizationsTable,
-  pilotApplications as pilotApplicationsTable
+  pilotApplications as pilotApplicationsTable,
+  tenantBranding as tenantBrandingTable
 } from './src/db/schema.ts';
 import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import { requireAuth, rateLimiter, requireRole, AuthenticatedRequest } from './src/middleware/security.ts';
@@ -45,7 +46,7 @@ import {
   validateBody,
   revokeSessionSchema, recordLoginSchema,
   userOnboardSchema, userProfileSchema,
-  orgInviteSchema, teamRoleSchema, verifyMfaSchema, orgSecuritySchema,
+  orgInviteSchema, teamRoleSchema, verifyMfaSchema, orgSecuritySchema, tenantBrandingSchema,
   createClientSchema, clientTierSchema,
   createComplianceScheduleSchema, updateComplianceScheduleSchema,
   createScanScheduleSchema, updateScanScheduleSchema,
@@ -1516,6 +1517,57 @@ async function startServer() {
   });
 
   // REST API Endpoints: Clients
+  app.get('/api/tenant/branding', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const [settings] = await db.select().from(tenantBrandingTable)
+        .where(eq(tenantBrandingTable.tenantId, req.user!.tenantId))
+        .limit(1);
+      res.json(settings || {
+        organizationName: '',
+        reportTitle: 'Software Supply Chain Evidence Report',
+        primaryColor: '#4f46e5',
+        logoDataUrl: '',
+        supportEmail: '',
+        reportDisclaimer: 'This report summarizes stored and user-declared evidence. It does not independently certify legal or regulatory compliance.'
+      });
+    } catch (err) {
+      trackAndLogError(err, 'GET /api/tenant/branding');
+      res.status(500).json({ error: 'Failed to load tenant branding' });
+    }
+  });
+
+  app.put('/api/tenant/branding', requireAuth, requireRole(['Owner', 'Admin']), validateBody(tenantBrandingSchema), async (req: AuthenticatedRequest, res) => {
+    try {
+      const tenantId = req.user!.tenantId;
+      const values = {
+        tenantId,
+        ...req.body,
+        logoDataUrl: req.body.logoDataUrl || null,
+        updatedBy: req.user!.email,
+        updatedAt: new Date()
+      };
+      const [saved] = await db.insert(tenantBrandingTable).values(values)
+        .onConflictDoUpdate({
+          target: tenantBrandingTable.tenantId,
+          set: {
+            organizationName: values.organizationName,
+            reportTitle: values.reportTitle,
+            primaryColor: values.primaryColor,
+            logoDataUrl: values.logoDataUrl,
+            supportEmail: values.supportEmail,
+            reportDisclaimer: values.reportDisclaimer,
+            updatedBy: values.updatedBy,
+            updatedAt: values.updatedAt
+          }
+        }).returning();
+      await addAuditLogBlock(req.user!.email, 'Tenant Branding Updated', req.ip || 'unknown', 'Success', 'Updated tenant-owned report presentation settings.', tenantId);
+      res.json(saved);
+    } catch (err) {
+      trackAndLogError(err, 'PUT /api/tenant/branding');
+      res.status(500).json({ error: 'Failed to save tenant branding' });
+    }
+  });
+
   app.get('/api/clients', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
@@ -1587,6 +1639,52 @@ async function startServer() {
     } catch (err) {
       trackAndLogError(err, 'POST /api/clients');
       res.status(500).json({ error: 'Failed to create client' });
+    }
+  });
+
+  app.post('/api/demo/client', requireAuth, requireRole(['Owner', 'Admin']), async (req: AuthenticatedRequest, res) => {
+    try {
+      const tenantId = req.user!.tenantId;
+      const [existing] = await db.select().from(clientsTable).where(and(
+        eq(clientsTable.tenantId, tenantId),
+        eq(clientsTable.isDemo, 1)
+      )).limit(1);
+      if (existing) return res.json({ created: false, clientId: existing.id });
+
+      const id = `demo-client-${crypto.randomUUID()}`;
+      await db.insert(clientsTable).values({
+        id,
+        tenantId,
+        name: 'Northstar Manufacturing — DEMO',
+        domain: 'demo.invalid',
+        industry: 'Manufacturing (Demo)',
+        trustScore: 0,
+        riskLevel: 'Unknown',
+        avatarColor: 'indigo',
+        subscriptionTier: 'Enterprise',
+        joinedDate: new Date().toISOString().split('T')[0],
+        teamCount: 0,
+        passportCount: 0,
+        criticalRisksCount: 0,
+        complianceProgress: 0,
+        softwareInventory: '[]',
+        complianceStatus: '[]',
+        teamMembers: '[]',
+        activityTimeline: JSON.stringify([{
+          id: `demo-event-${crypto.randomUUID()}`,
+          timestamp: new Date().toISOString(),
+          eventType: 'Client Onboarded',
+          description: 'DEMO DATA: Example client workspace created. No real customer or compliance evidence is represented.',
+          user: req.user!.email,
+          severity: 'Info'
+        }]),
+        isDemo: 1
+      });
+      await addAuditLogBlock(req.user!.email, 'Demo Client Created', req.ip || 'unknown', 'Success', 'Created an unmistakably labeled demo-data client with no fabricated evidence.', tenantId);
+      res.status(201).json({ created: true, clientId: id });
+    } catch (err) {
+      trackAndLogError(err, 'POST /api/demo/client');
+      res.status(500).json({ error: 'Failed to create demo client' });
     }
   });
 

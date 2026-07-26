@@ -39,6 +39,9 @@ import OnboardingWizard from './components/OnboardingWizard';
 import ExtensionMarketplace from './components/ExtensionMarketplace';
 import TrustOSTutorial from './components/TrustOSTutorial';
 import FounderDashboardView from './components/FounderDashboardView';
+import CraEvidenceView from './components/CraEvidenceView';
+import FirstRunPanel from './components/FirstRunPanel';
+import SalesOnePager from './components/SalesOnePager';
 
 // Modals Icons
 import { CheckCircle2, X, ShieldAlert, Sparkles, Plus, Layers, HelpCircle, RefreshCw } from 'lucide-react';
@@ -53,6 +56,9 @@ export default function App() {
   const [userRole, setUserRole] = useState<string>('Viewer');
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState('');
+  const [dataReloadKey, setDataReloadKey] = useState(0);
 
   // Global Shared States
   const [clients, setClients] = useState<Client[]>([]);
@@ -160,54 +166,66 @@ export default function App() {
       return;
     }
 
+    setDataLoading(true);
+    setDataError('');
+    let pending = 6;
+    const settled = () => {
+      pending -= 1;
+      if (pending === 0) setDataLoading(false);
+    };
+    const failed = (label: string, err: unknown) => {
+      console.error(`Error fetching ${label}:`, err);
+      setDataError('Some workspace data could not be loaded. Your existing records were not changed.');
+      settled();
+    };
     // Pull database registers isolated by tenant domain
     apiFetch('/api/clients')
       .then(res => {
         if (res.ok) return res.json();
         throw new Error('Failed to fetch clients');
       })
-      .then(data => setClients(data))
-      .catch(err => console.error('Error fetching clients:', err));
+      .then(data => { setClients(data); settled(); })
+      .catch(err => failed('clients', err));
 
     apiFetch('/api/passports')
       .then(res => {
         if (res.ok) return res.json();
         throw new Error('Failed to fetch passports');
       })
-      .then(data => setPassports(data))
-      .catch(err => console.error('Error fetching passports:', err));
+      .then(data => { setPassports(data); settled(); })
+      .catch(err => failed('passports', err));
 
     apiFetch('/api/scans')
       .then(res => {
         if (res.ok) return res.json();
         throw new Error('Failed to fetch scans');
       })
-      .then(data => setScans(data))
-      .catch(err => console.error('Error fetching scans:', err));
+      .then(data => { setScans(data); settled(); })
+      .catch(err => failed('scans', err));
 
     apiFetch('/api/alerts')
       .then(res => {
         if (res.ok) return res.json();
         throw new Error('Failed to fetch alerts');
       })
-      .then(data => setAlerts(data))
-      .catch(err => console.error('Error fetching alerts:', err));
+      .then(data => { setAlerts(data); settled(); })
+      .catch(err => failed('alerts', err));
 
     apiFetch('/api/integrations')
       .then(res => {
         if (res.ok) return res.json();
         throw new Error('Failed to fetch integrations');
       })
-      .then(data => setIntegrations(data))
-      .catch(err => console.error('Error fetching integrations:', err));
+      .then(data => { setIntegrations(data); settled(); })
+      .catch(err => failed('integrations', err));
 
     apiFetch('/api/vendors')
       .then(res => {
         if (res.ok) return res.json();
         throw new Error('Failed to fetch vendors');
       })
-      .then(data => setVendors(data))
-      .catch(err => console.error('Error fetching vendors:', err));
+      .then(data => { setVendors(data); settled(); })
+      .catch(err => failed('vendors', err));
 
     const handleRefresh = () => {
       if (!user || !user.uid) return;
@@ -223,7 +241,7 @@ export default function App() {
     return () => {
       window.removeEventListener('refresh-data', handleRefresh);
     };
-  }, [user?.uid, user?.tenantId]);
+  }, [user?.uid, user?.tenantId, dataReloadKey]);
 
   const handleChangeRole = async (newRole: string) => {
     try {
@@ -900,7 +918,22 @@ export default function App() {
 
         {/* Scrollable Viewport Stage */}
         <main className="flex-1 overflow-y-auto p-6 lg:p-8" id="viewport-stage-container">
-          {activeTab === 'dashboard' && (
+          {clients.find(client => client.id === selectedClientId)?.isDemo === 1 && (
+            <div className="sticky top-0 z-30 mb-5 rounded-2xl border-2 border-amber-400 bg-amber-100 px-5 py-3 text-center text-sm font-black tracking-[0.18em] text-amber-950 shadow-lg">
+              DEMO DATA — NOT A REAL CUSTOMER OR COMPLIANCE RECORD
+            </div>
+          )}
+          {dataError && (
+            <div className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
+              <span>{dataError}</span>
+              <button onClick={() => setDataReloadKey(key => key + 1)} className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 font-bold shadow-sm"><RefreshCw className="w-4 h-4" /> Retry</button>
+            </div>
+          )}
+          {dataLoading && <div className="mb-5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full w-1/3 animate-pulse rounded-full bg-indigo-500" /></div>}
+          {!dataLoading && !dataError && clients.length === 0 && passports.length === 0 && activeTab === 'dashboard' && (
+            <FirstRunPanel role={userRole} onNavigate={handleNavigateWithItem} />
+          )}
+          {activeTab === 'dashboard' && (clients.length > 0 || passports.length > 0) && (
             <DashboardView
               selectedClientId={selectedClientId}
               clients={clients}
@@ -999,7 +1032,7 @@ export default function App() {
 
           {activeTab === 'reports' && (
             (currentClientTier === 'Enterprise' || currentClientTier === 'Premium') ? (
-              <ReportsView clients={clients} />
+              <ReportsView clients={clients} userRole={userRole} />
             ) : (
               <PaywallOverlay
                 featureName="Advanced Executive Compliance Reports"
@@ -1043,6 +1076,10 @@ export default function App() {
               selectedClientId={selectedClientId}
             />
           )}
+
+          {activeTab === 'cra-evidence' && <CraEvidenceView passports={passports} />}
+
+          {activeTab === 'sales-brief' && <SalesOnePager onNavigate={handleNavigateWithItem} />}
 
           {activeTab === 'marketplace' && (
             <ExtensionMarketplace

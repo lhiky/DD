@@ -56,7 +56,7 @@ export function generateClientCompliancePDF(client: Client) {
 
   currentY += 7;
 
-  // Render Tenant Profile Grid (Simulated 2-column list)
+  // Render tenant profile grid
   doc.setFillColor(248, 250, 252); // slate-50
   doc.rect(startX, currentY, 180, 24, 'F');
   doc.setDrawColor(226, 232, 240);
