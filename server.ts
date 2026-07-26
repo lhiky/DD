@@ -6,7 +6,6 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
@@ -3469,6 +3468,7 @@ Generate a short, high-quality, and highly structured advisory response (using c
   // Integrate Vite as Middleware or Static File Server
   if (process.env.NODE_ENV !== 'production') {
     console.log('Running in Development mode. Initializing Vite middleware...');
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'
