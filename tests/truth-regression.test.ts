@@ -109,6 +109,13 @@ describe('production truth regressions', () => {
     expect(swarm).not.toContain('24/7 Continuous Monitoring');
     expect(server).toContain('eq(agentJobsTable.tenantId, req.user!.tenantId)');
   });
+
+  it('provides separate sanitized liveness and dependency readiness endpoints', () => {
+    const server = read('server.ts');
+    expect(server).toContain("app.get('/health/live'");
+    expect(server).toContain("app.get('/health/ready'");
+    expect(server).toContain("dependencies: { database: database.db }");
+  });
 });
 
 describe('independent OSV worker truth boundaries', () => {

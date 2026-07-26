@@ -10,10 +10,16 @@ interface PassportSummary {
 
 interface VectorEntry {
   dimension: string;
-  state: 'observed' | 'unknown';
+  state: 'known' | 'partially_known' | 'unknown' | 'stale' | 'expired' | 'unavailable';
   score: number | null;
-  confidence: number;
+  confidence: number | null;
+  completeness: number;
   explanation: string;
+  evidenceCount: number;
+  openFindingCount: number;
+  nextRefreshAt: string | null;
+  freshnessStatus: string;
+  limitations: string[];
   observations: Array<{
     evidenceId: string;
     statement: string;
@@ -127,6 +133,9 @@ export default function TrustBrainView(_props: { userRole?: string }) {
       )}
       {observation && (
         <>
+          <p className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">
+            Completeness measures how much of SPR’s defined observable evidence set is currently available. It does not measure whether the software is safe or compliant.
+          </p>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <p className="text-xs uppercase text-slate-500">Evidence coverage</p>
@@ -148,12 +157,23 @@ export default function TrustBrainView(_props: { userRole?: string }) {
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="font-semibold capitalize">{entry.dimension.replace(/([A-Z])/g, ' $1')}</h2>
                   <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                    entry.state === 'observed' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                    entry.state === 'unknown' ? 'bg-slate-100 text-slate-600'
+                      : entry.state === 'unavailable' || entry.state === 'expired' ? 'bg-rose-100 text-rose-700'
+                      : entry.state === 'stale' ? 'bg-amber-100 text-amber-800'
+                      : 'bg-indigo-100 text-indigo-700'
                   }`}>
-                    {entry.state === 'observed' ? `Observed · ${entry.score ?? '—'}` : 'Unknown'}
+                    {entry.state.replaceAll('_', ' ')} · score {entry.score ?? '—'}
                   </span>
                 </div>
                 <p className="mt-2 text-sm text-slate-500">{entry.explanation}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                  <span>Confidence: {entry.confidence === null ? 'Unknown' : `${Math.round(entry.confidence * 100)}%`}</span>
+                  <span>Completeness: {Math.round(entry.completeness * 100)}%</span>
+                  <span>Evidence: {entry.evidenceCount}</span>
+                  <span>Open findings: {entry.openFindingCount}</span>
+                  <span>Freshness: {entry.freshnessStatus}</span>
+                  <span>Next refresh: {entry.nextRefreshAt ? new Date(entry.nextRefreshAt).toLocaleString() : 'Unknown'}</span>
+                </div>
                 {entry.observations.map(item => (
                   <div key={item.evidenceId} className="mt-3 rounded-xl border border-slate-200 p-3 text-xs dark:border-zinc-700">
                     <div className="flex items-center gap-2">
@@ -165,6 +185,9 @@ export default function TrustBrainView(_props: { userRole?: string }) {
                     <p>Recorded: {item.timestamp}</p>
                     <p>Confidence: {Math.round(item.confidence * 100)}%</p>
                   </div>
+                ))}
+                {entry.limitations.map(limitation => (
+                  <p key={limitation} className="mt-2 text-xs text-slate-500">Limitation: {limitation}</p>
                 ))}
                 {entry.missingEvidence.map(missing => (
                   <div key={missing} className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">

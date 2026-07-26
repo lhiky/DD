@@ -631,6 +631,22 @@ async function startServer() {
     });
   });
 
+  app.get('/health/live', (_req, res) => {
+    res.status(200).json({ status: 'live', service: 'SPR API' });
+  });
+
+  app.get('/health/ready', async (_req, res) => {
+    const configured = Boolean(process.env.SQL_HOST && process.env.SQL_USER && process.env.SQL_PASSWORD && process.env.SQL_DB_NAME);
+    const database = await probeDatabase(() => db.execute(sql`SELECT 1`), configured, 2_000);
+    const ready = database.db === 'connected';
+    res.status(ready ? 200 : 503).json({
+      status: ready ? 'ready' : 'not_ready',
+      service: 'SPR API',
+      dependencies: { database: database.db },
+      code: database.code
+    });
+  });
+
   app.get('/api/health', async (_req, res) => {
     const configured = Boolean(
       process.env.SQL_HOST &&
