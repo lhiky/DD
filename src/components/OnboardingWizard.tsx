@@ -232,9 +232,9 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
             <ShieldCheck className="h-8 w-8 text-indigo-400" />
           </div>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight font-display">First-Time Setup Wizard</h1>
-        <p className="text-xs text-slate-400 max-w-sm">
-          Welcome to SPR. Let's configure your secure, isolated corporate registry environment.
+        <h1 className="text-3xl font-bold tracking-tight font-display">Set up your SPR workspace</h1>
+        <p className="text-sm text-slate-300 max-w-md">
+          Four short steps. You can change these settings later.
         </p>
       </div>
 
@@ -244,10 +244,10 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
         {/* Progress Bar */}
         <div className="flex items-center justify-between mb-6 border-b border-slate-900 pb-4">
           <span className="text-[10px] font-mono uppercase text-slate-400 font-bold tracking-wider">
-            Step {step} of 4: {step === 1 && 'Workspace Credentials'}
-            {step === 2 && 'Capacity Assessment'}
-            {step === 3 && 'Security Lockdowns'}
-            {step === 4 && 'Generating Node Isolation'}
+            Step {step} of 4: {step === 1 && 'Workspace'}
+            {step === 2 && 'Preferences'}
+            {step === 3 && 'Account security'}
+            {step === 4 && 'Finish'}
           </span>
           <div className="flex gap-1.5">
             {[1, 2, 3, 4].map((s) => (
@@ -277,8 +277,12 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
         {step === 1 && (
           <div className="space-y-4 text-left flex-1">
             <div>
-              <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase mb-1.5">
-                MSP Organization / Company Name
+              <h2 className="text-lg font-semibold">Name your workspace</h2>
+              <p className="mt-1 text-sm text-slate-400">Use the company or team name your members will recognize.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Workspace name
               </label>
               <div className="relative">
                 <Building2 className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-500" />
@@ -286,35 +290,36 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="e.g. Acme Managed Security Pro"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  placeholder="Example: Acme Security"
+                  autoFocus
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase mb-1.5">
-                Your Job Role
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Your role
               </label>
               <div className="relative">
                 <User2 className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-500" />
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
                 >
-                  <option value="Owner">Owner (Chief Executive / Founder)</option>
-                  <option value="Admin">Admin (Lead Administrator)</option>
-                  <option value="Technician">Technician (Security Operator)</option>
-                  <option value="Viewer">Viewer (Security Auditor)</option>
-                  <option value="Client">Client (External Partner)</option>
+                  <option value="Owner">Owner</option>
+                  <option value="Admin">Administrator</option>
+                  <option value="Technician">Security operator</option>
+                  <option value="Viewer">Auditor or viewer</option>
+                  <option value="Client">Client</option>
                 </select>
               </div>
             </div>
             
-            <p className="text-[10px] text-slate-500 leading-normal">
-              Note: Creating this organization designates you as the <strong>Workspace Owner</strong> with complete root level control.
+            <p className="text-xs text-slate-400 leading-normal">
+              As the person creating this workspace, your account will receive the Owner role.
             </p>
           </div>
         )}
@@ -322,10 +327,14 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
         {/* STEP 2: CAPACITY ASSESSMENT */}
         {step === 2 && (
           <div className="space-y-4 text-left flex-1">
+            <div>
+              <h2 className="text-lg font-semibold">Tell us what you need</h2>
+              <p className="mt-1 text-sm text-slate-400">These answers personalize the workspace. They do not change your plan.</p>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase mb-1.5">
-                  Technicians Count
+                  Team members
                 </label>
                 <input
                   type="number"
@@ -338,7 +347,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
 
               <div>
                 <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase mb-1.5">
-                  Managed Clients
+                  Clients
                 </label>
                 <input
                   type="number"
@@ -352,7 +361,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
 
             <div>
               <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase mb-1.5">
-                Primary Use Case
+                Main goal
               </label>
               <select
                 value={primaryUseCase}
@@ -362,7 +371,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
                 <option value="NIST Mapping & Risk Assessments">NIST Mapping & Risk Assessments</option>
                 <option value="Continuous SBOM Monitoring">Continuous SBOM Monitoring</option>
                 <option value="SOC 2 & Executive Compliance Audit">SOC 2 & Executive Compliance Audit</option>
-                <option value="Autonomous AI Security Patching">Autonomous AI Security Patching</option>
+                <option value="Software risk review">Software risk review</option>
               </select>
             </div>
           </div>
@@ -371,11 +380,15 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
         {/* STEP 3: SECURITY & MFA SUPPORT */}
         {step === 3 && (
           <div className="space-y-4 text-left flex-1">
+            <div>
+              <h2 className="text-lg font-semibold">Protect your account</h2>
+              <p className="mt-1 text-sm text-slate-400">Add an authenticator code now, or turn this option off and continue.</p>
+            </div>
             <div className="flex items-center justify-between p-3.5 bg-slate-900 rounded-2xl border border-slate-800">
               <div className="space-y-1 pr-2">
-                <h4 className="text-xs font-bold text-slate-200">Enforce Multi-Factor Auth (MFA)</h4>
-                <p className="text-[10px] text-slate-500 leading-normal">
-                  Highly recommended. Secures MSP login sessions with secondary time-based authenticator codes.
+                <h4 className="text-sm font-semibold text-slate-200">Use an authenticator app</h4>
+                <p className="text-xs text-slate-400 leading-normal">
+                  Recommended for workspace owners.
                 </p>
               </div>
               <input
@@ -398,7 +411,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
                   <div className="flex items-center gap-2">
                     <KeyRound className="h-4 w-4 text-indigo-400" />
                     <span className="text-[10px] font-mono uppercase text-indigo-300 font-bold tracking-wider">
-                      Authenticator Configuration Key
+                      Authenticator setup
                     </span>
                   </div>
                   {isTotpVerified && (
@@ -425,12 +438,12 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
                     )}
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] text-slate-400 block font-mono">Secret Handshake Key:</span>
+                    <span className="text-xs text-slate-400 block">Manual setup key</span>
                     <span className="font-mono text-xs text-white tracking-widest font-bold bg-slate-900 px-2 py-1 rounded border border-slate-800 select-all block">
                       {mfaSecret}
                     </span>
                     <p className="text-[9px] text-slate-500">
-                      Scan QR or enter key in Google Authenticator/Okta Verify to bind.
+                      Scan the QR code, or enter this key in your authenticator app.
                     </p>
                   </div>
                 </div>
@@ -438,7 +451,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
                 {/* Verification Code Input */}
                 <div className="pt-2 border-t border-slate-800 space-y-2">
                   <label className="text-[10px] font-mono uppercase text-slate-400 block">
-                    Verify 6-Digit Code from Authenticator App:
+                    Enter the 6-digit code
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -477,10 +490,14 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
           </div>
         )}
 
-        {/* STEP 4: ANIMATED DATABASE & TENANT GENERATION */}
+        {/* STEP 4: SERVER-BACKED WORKSPACE SETUP */}
         {step === 4 && (
           <div className="space-y-4 text-left flex-1 font-mono text-[11px] text-slate-300 leading-normal">
-            <div className="p-4 bg-black/80 rounded-2xl border border-slate-850 space-y-2 min-h-36 max-h-48 overflow-y-auto">
+            <div className="font-sans">
+              <h2 className="text-lg font-semibold">Creating your workspace</h2>
+              <p className="mt-1 text-sm text-slate-400">SPR is saving your settings and applying your Owner permissions.</p>
+            </div>
+            <div className="p-4 bg-black/80 rounded-2xl border border-slate-850 space-y-2 min-h-36 max-h-48 overflow-y-auto" role="status" aria-live="polite">
               {setupLogs.map((log, index) => (
                 <div key={index} className="flex gap-2 items-start text-emerald-400">
                   <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
@@ -490,7 +507,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
               {setupLogs.length < 4 && (
                 <div className="flex items-center gap-2 text-slate-500 animate-pulse">
                   <RefreshCw className="h-3 w-3 animate-spin text-slate-400" />
-                  <span>Configuring workspace...</span>
+                  <span>Saving your setup...</span>
                 </div>
               )}
             </div>
@@ -498,7 +515,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
             {setupLogs.length === 4 && (
               <div className="p-3 bg-indigo-950/20 text-indigo-300 border border-indigo-900/40 rounded-xl flex gap-2 items-center text-[10px]">
                 <Sparkles className="h-4 w-4 text-indigo-400 shrink-0" />
-                <span>Workspace setup complete. Ready to enter application.</span>
+                <span>Your workspace is ready.</span>
               </div>
             )}
           </div>
@@ -519,7 +536,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
               className="flex items-center gap-1 px-4 py-2 hover:bg-rose-950/10 hover:text-rose-400 border border-transparent rounded-xl text-slate-500 text-xs font-semibold cursor-pointer"
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span>Cancel / Sign Out</span>
+              <span>Sign out</span>
             </button>
           )}
 
@@ -528,7 +545,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
               onClick={handleNextStep}
               className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg text-xs cursor-pointer"
             >
-              <span>Continue</span>
+              <span>{step === 3 ? 'Create workspace' : 'Continue'}</span>
               <ArrowRight className="h-4 w-4" />
             </button>
           ) : (
@@ -541,7 +558,7 @@ export default function OnboardingWizard({ user, onOnboardingComplete }: Onboard
                 <RefreshCw className="h-3.5 w-3.5 animate-spin text-white" />
               ) : (
                 <>
-                  <span>Launch Registry</span>
+                  <span>Open SPR</span>
                   <Check className="h-4 w-4" />
                 </>
               )}

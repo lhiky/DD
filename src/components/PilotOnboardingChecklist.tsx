@@ -151,7 +151,7 @@ export default function PilotOnboardingChecklist({
         if (connector === 'gitlab') setGitlabConnected(true);
         if (connector === 'pypi') setPypiConnected(true);
 
-        setSuccessMsg(`Successfully connected and sealed cryptographic channel with ${match.name}!`);
+        setSuccessMsg(`${match.name} was marked connected. Verify repository access before starting a scan.`);
       } else {
         const errData = await updateRes.json();
         setErrorMsg(errData.error || `Failed to verify credentials with ${match.name}.`);
@@ -185,35 +185,35 @@ export default function PilotOnboardingChecklist({
   const tasks = [
     {
       id: 'onboard-client',
-      title: 'Initialize Your First Tenancy Client',
-      description: 'Create an MSP customer silo with custom industry standards and risk targets.',
+      title: 'Add your first client',
+      description: 'Create the client workspace that will own the software and scan records.',
       status: clientsCount > 0,
       actionLabel: 'Create Client',
       action: () => onOpenQuickAction('add-client'),
-      completedText: `${clientsCount} Client(s) Registered`
+      completedText: `${clientsCount} client${clientsCount === 1 ? '' : 's'} added`
     },
     {
       id: 'register-passport',
-      title: 'Onboard Software Asset & Mint Passport',
-      description: 'Extract and attest an SBOM, or seal security provenance for client software files.',
+      title: 'Register software',
+      description: 'Create a Software Passport for an application you want to track.',
       status: passportsCount > 0,
-      actionLabel: 'Mint Passport',
+      actionLabel: 'Create Passport',
       action: () => onOpenQuickAction('register-passport'),
-      completedText: `${passportsCount} Passport(s) Sealed`
+      completedText: `${passportsCount} passport${passportsCount === 1 ? '' : 's'} created`
     },
     {
       id: 'run-scan',
-      title: 'Trigger Automated Software Scan',
-      description: 'Scan client dependencies against live threat models to calculate instant trust scores.',
+      title: 'Run a software scan',
+      description: 'Submit an SBOM or configured repository and follow the scan job status.',
       status: scansCount > 0,
-      actionLabel: 'Trigger Scan',
+      actionLabel: 'Run Scan',
       action: () => onOpenQuickAction('scan-sbom'),
-      completedText: `${scansCount} Scan(s) Logged`
+      completedText: `${scansCount} scan${scansCount === 1 ? '' : 's'} recorded`
     },
     {
       id: 'configure-integrations',
-      title: 'Connect Real Source Repositories',
-      description: 'Configure active GitHub/GitLab pipelines to verify code signature seals dynamically.',
+      title: 'Connect a source repository',
+      description: 'Add repository access before starting a repository scan.',
       status: githubConnected || gitlabConnected || pypiConnected,
       actionLabel: 'Configure Sources',
       action: () => setActiveTab(activeTab === 'integrations' ? 'none' : 'integrations'),
@@ -221,8 +221,8 @@ export default function PilotOnboardingChecklist({
     },
     {
       id: 'verify-limits',
-      title: 'Select Commercial Subscription Tier',
-      description: 'Choose a commercial plan mapping client silos, passports count, and patch frequencies.',
+      title: 'Review your plan',
+      description: 'Check the current usage limits before adding production workloads.',
       status: currentPlan !== 'Starter' || clientsCount > 0, // Mark done if upgraded or they have active assets
       actionLabel: 'Manage Plan',
       action: () => setActiveTab(activeTab === 'billing' ? 'none' : 'billing'),
@@ -244,7 +244,7 @@ export default function PilotOnboardingChecklist({
         <div className="space-y-1.5 text-left">
           <div className="flex items-center gap-2">
             <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
-              Onboarding Navigator
+              Getting started
             </span>
             <span className="flex h-2 w-2 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -252,11 +252,11 @@ export default function PilotOnboardingChecklist({
             </span>
           </div>
           <h2 className="text-lg font-bold text-zinc-100 font-display flex items-center gap-2">
-            <span>MSP Pilot Readiness Guide</span>
-            <span className="text-xs font-mono font-normal text-slate-400">| First 15 Minutes Experience</span>
+            <span>Set up SPR</span>
+            <span className="text-xs font-normal text-slate-400">Four practical steps</span>
           </h2>
           <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
-            A real person must be able to visit SPR, setup client silos, link real software assets, execute live scans, and review authentic cryptographic audit trail logs. Check off your core setup actions below to achieve absolute pilot-readiness.
+            Add a client, register its software, run a scan, and review the recorded results. SPR marks each item complete from saved workspace data.
           </p>
         </div>
 

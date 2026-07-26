@@ -41,71 +41,41 @@ export default function TrustOSTutorial({
 
   const steps = [
     {
-      title: "Welcome to your Trust Operating System",
-      badge: "Platform Overview",
-      description: "Welcome to the Sovereign Trust-OS Platform. This command center is used by security teams, compliance officers, and executive officers to monitor software supply chain security, catalog dependencies, and enforce continuous security sign-off. The platform is structured around single-responsibility core tasks and modular extensions.",
-      actionLabel: "Let's Begin the Tour",
+      title: "Welcome to SPR",
+      badge: "Quick tour",
+      description: "This four-step tour shows the basic workflow: add a client, register software, run a scan, and review the recorded results.",
+      actionLabel: "Start tour",
       icon: ShieldCheck,
       action: () => {}
     },
     {
-      title: "Pillar 1: Discover Technology",
-      badge: "Core Operation 1/4",
-      description: "Under the core operations, 'Continuous Scanner' acts as the primary sensory ingestion node. It continuously scans your network architectures, cloud platforms, and third-party SaaS hubs to catalog raw technologies.",
-      actionLabel: "View Scanner",
-      icon: Compass,
-      action: () => {
-        onNavigateTab('scans');
-      }
-    },
-    {
-      title: "Pillar 2: Classify Technology",
-      badge: "Core Operation 2/4",
-      description: "Once discovered, technology must be classified. Under 'Server Assets', the system maps items into environment boundaries (Production, Staging, Legacy), categorizes vendors, and assigns critical severity ratings.",
-      actionLabel: "View Asset Classifier",
+      title: "1. Add a client",
+      badge: "Organize",
+      description: "Create a client workspace first. Passports and scan records are kept within that client's tenant boundary.",
+      actionLabel: "Open clients",
       icon: Layers,
       action: () => {
-        onNavigateTab('assets');
+        onNavigateTab('clients');
       }
     },
     {
-      title: "Pillar 3: Create Software Passports",
-      badge: "Core Operation 3/4",
-      description: "For every verified technology asset, SPR generates a cryptographic 'Software Passport'. A Passport acts as an immutable ledger containing licensing info, cryptographic signatures, and vulnerability profiles.",
-      actionLabel: "View Software Passports",
+      title: "2. Register software",
+      badge: "Describe",
+      description: "Create a Software Passport for the application you want to track. A new passport starts without unsupported verification claims.",
+      actionLabel: "Open passports",
       icon: FileCheck,
       action: () => {
         onNavigateTab('passports');
       }
     },
     {
-      title: "Pillar 4: Build the Trust Graph",
-      badge: "Core Operation 4/4",
-      description: "The crown jewel of the core is the Trust Graph, rendered under the 'Trust OS Layer' tab. It renders an elegant 2D living topology modeling security nodes and key risk highlights, designed as a commanding executive center.",
-      actionLabel: "View Trust Graph Center",
-      icon: Globe,
+      title: "3. Run and review a scan",
+      badge: "Verify",
+      description: "Submit an SBOM or configured repository scan. Follow its real job status, then review the findings and stored provider evidence.",
+      actionLabel: "Open scans",
+      icon: Compass,
       action: () => {
-        onNavigateTab('trust-os');
-      }
-    },
-    {
-      title: "Everything Else is an Extension!",
-      badge: "Extensible Design",
-      description: "Instead of overwhelming users with bloated layouts, we treat secondary modules as plugins! Users install only what their organization requires. Try installing the 'AI Security Swarm' or 'SOC 2 Audit Engine' in our marketplace to instantly unlock capability dashboards in the active sidebar.",
-      actionLabel: "Go to Extension Marketplace",
-      icon: Cpu,
-      action: () => {
-        onNavigateTab('marketplace');
-      }
-    },
-    {
-      title: "SPR Compliance Advisor",
-      badge: "Continuous Guidance",
-      description: "Check out the bottom of the Trust Graph page to consult the SPR Advisor. Access instant remediation guidelines, look up detailed compliance mapping, and view active alerts for security risks resolved by the platform.",
-      actionLabel: "Explore Command Center",
-      icon: Sparkles,
-      action: () => {
-        onNavigateTab('trust-os');
+        onNavigateTab('scans');
       }
     }
   ];
@@ -147,13 +117,14 @@ export default function TrustOSTutorial({
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[9px] font-mono font-black text-slate-400 uppercase tracking-widest leading-none">Interactive Guide</span>
-              <h3 className="text-sm font-display font-black text-white mt-1 block leading-none">Trust-OS Platform Tour</h3>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider leading-none">Getting started</span>
+              <h3 className="text-sm font-display font-bold text-white mt-1 block leading-none">SPR quick tour</h3>
             </div>
           </div>
 
           <button
             onClick={onClose}
+            aria-label="Close tutorial"
             className="p-1.5 bg-[#111625] border border-slate-800 text-slate-400 hover:text-white rounded-xl cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -181,7 +152,7 @@ export default function TrustOSTutorial({
               <h4 className="text-base font-display font-black text-white tracking-tight">
                 {stepInfo.title}
               </h4>
-              <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              <p className="text-sm text-slate-300 leading-relaxed font-sans">
                 {stepInfo.description}
               </p>
             </div>

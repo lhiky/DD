@@ -67,6 +67,22 @@ describe('production truth regressions', () => {
     expect(source).toMatch(/Implementation and operational evidence have not been independently verified/);
     expect(source).toMatch(/No verification evidence is connected/);
   });
+
+  it('keeps onboarding copy clear and avoids unsupported security claims', () => {
+    const wizard = read('src/components/OnboardingWizard.tsx');
+    const tutorial = read('src/components/TrustOSTutorial.tsx');
+    const checklist = read('src/components/PilotOnboardingChecklist.tsx');
+
+    expect(wizard).toContain('Set up your SPR workspace');
+    expect(wizard).toContain('Four short steps');
+    expect(wizard).not.toContain('Generating Node Isolation');
+    expect(wizard).not.toContain('Secret Handshake Key');
+    expect(tutorial).toContain('This four-step tour shows the basic workflow');
+    expect(tutorial).not.toContain('crown jewel');
+    expect(tutorial).not.toContain('immutable ledger');
+    expect(checklist).not.toContain('sealed cryptographic channel');
+    expect(checklist).not.toContain('absolute pilot-readiness');
+  });
 });
 
 describe('independent OSV worker truth boundaries', () => {
