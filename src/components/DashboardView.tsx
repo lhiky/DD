@@ -314,6 +314,7 @@ export default function DashboardView({
   const [agentLogs, setAgentLogs] = useState<{ id: string; agent: string; text: string; time: string; severity: 'info' | 'warn' | 'success' }[]>([]);
   const [isAcceleratingSwarm, setIsAcceleratingSwarm] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [swarmError, setSwarmError] = useState<string | null>(null);
 
   const mapRealLog = (l: any) => ({
     id: String(l.id),
@@ -383,26 +384,35 @@ export default function DashboardView({
 
   const triggerSwarmAcceleration = async () => {
     if (isAcceleratingSwarm) return;
+    const passport = localPassports[0];
+    if (!passport) {
+      setSwarmError('Create a Software Passport with an SBOM before running the OSV worker.');
+      return;
+    }
     setIsAcceleratingSwarm(true);
+    setSwarmError(null);
     try {
       const res = await apiFetch('/api/agent-jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          agentId: 'security-ai',
-          passportId: localPassports[0]?.id || 'all',
-          jobType: 'automated_compliance_check'
+          agentId: 'osv-worker',
+          passportId: passport.id,
+          jobType: 'osv_manifest_scan'
         })
       });
-      if (res.ok) {
-        const job = await res.json();
-        setActiveJobId(job.id);
+      const body = await res.json().catch(() => ({}));
+      if (res.ok || (res.status === 409 && body.jobId)) {
+        const job = body;
+        setActiveJobId(job.id || job.jobId);
         window.dispatchEvent(new CustomEvent('refresh-data'));
       } else {
+        setSwarmError(body.message || body.error || 'The OSV worker job was not accepted.');
         setIsAcceleratingSwarm(false);
       }
     } catch (err) {
       console.error(err);
+      setSwarmError('The OSV worker could not be reached.');
       setIsAcceleratingSwarm(false);
     }
   };
@@ -1005,18 +1015,17 @@ export default function DashboardView({
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-zinc-400">
-              5 specialized micro-orchestrator services working in sync to continuously protect, audit, and attest this Software Passport registry 24/7.
+              One independent OSV worker is connected. It checks versioned SBOM components against api.osv.dev and persists the returned evidence and findings.
             </p>
           </div>
 
-          {/* Swarm Visual Grid */}
-          <div className="grid grid-cols-5 gap-2.5 pt-2">
+          <div className="grid grid-cols-2 gap-2.5 pt-2 sm:grid-cols-5">
             {[
-              { name: 'Orchestrator', desc: 'SLA Broker', icon: Cpu, color: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200' },
-              { name: 'Security', desc: 'CVE Guard', icon: ShieldAlert, color: 'text-rose-500 bg-rose-50 dark:bg-rose-950/40 border-rose-200' },
-              { name: 'Quality', desc: 'Flow Tester', icon: Activity, color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200' },
-              { name: 'Evidence', desc: 'Attest Signer', icon: Lock, color: 'text-blue-500 bg-blue-50 dark:bg-blue-950/40 border-blue-200' },
-              { name: 'Analyst', desc: 'CISO Writer', icon: Award, color: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-950/40 border-yellow-200' }
+              { name: 'OSV Worker', desc: 'Connected', icon: ShieldAlert, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200' },
+              { name: 'Orchestrator', desc: 'Unavailable', icon: Cpu, color: 'text-slate-400 bg-slate-50 dark:bg-zinc-950/40 border-slate-200' },
+              { name: 'Quality', desc: 'Unavailable', icon: Activity, color: 'text-slate-400 bg-slate-50 dark:bg-zinc-950/40 border-slate-200' },
+              { name: 'Evidence', desc: 'Unavailable', icon: Lock, color: 'text-slate-400 bg-slate-50 dark:bg-zinc-950/40 border-slate-200' },
+              { name: 'AI Analyst', desc: 'Gemini key required', icon: Award, color: 'text-slate-400 bg-slate-50 dark:bg-zinc-950/40 border-slate-200' }
             ].map((ag) => (
               <div key={ag.name} className={`flex flex-col items-center justify-center p-2.5 rounded-xl border ${ag.color} text-center space-y-1`}>
                 <ag.icon className="w-5 h-5" />
@@ -1026,7 +1035,6 @@ export default function DashboardView({
             ))}
           </div>
 
-          {/* Simulated Swarm Log Terminal Stream */}
           <div className="bg-zinc-950/95 border border-zinc-850 rounded-xl p-4 font-mono text-[10px] text-zinc-300 h-44 overflow-y-auto space-y-2.5 shadow-inner">
             <span className="text-zinc-500 block uppercase font-bold tracking-widest text-[9px] border-b border-zinc-900 pb-1.5">
               REAL-TIME AUTOMATION TELEMETRY FEED
@@ -1038,7 +1046,16 @@ export default function DashboardView({
                 <span className="text-zinc-500 text-[9px] shrink-0">{log.time}</span>
               </div>
             ))}
+            {agentLogs.length === 0 && (
+              <div className="text-zinc-500">No persisted worker activity has been recorded.</div>
+            )}
           </div>
+
+          {swarmError && (
+            <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
+              {swarmError}
+            </p>
+          )}
 
           <button
             onClick={triggerSwarmAcceleration}
@@ -1046,7 +1063,7 @@ export default function DashboardView({
             className="w-full text-center py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-slate-950 font-sans font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isAcceleratingSwarm ? 'animate-spin' : ''}`} />
-            <span>Accelerate Ledger Scans</span>
+            <span>{isAcceleratingSwarm ? 'OSV worker running' : 'Run OSV SBOM scan'}</span>
           </button>
         </div>
 

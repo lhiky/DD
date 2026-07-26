@@ -83,7 +83,7 @@ export default function Sidebar({
       activeExtensionsList.push({ id: 'enterprise-audit', label: 'Enterprise Audit', icon: Shield, badge: 'SOC2' });
     }
     if (installedExtensions.includes('ai-swarm')) {
-      activeExtensionsList.push({ id: 'ai-swarm', label: 'AI Security Swarm', icon: Sparkles, badge: 'Live', animateBadge: true });
+      activeExtensionsList.push({ id: 'ai-swarm', label: 'Security Worker', icon: Sparkles, badge: 'OSV', animateBadge: false });
     }
     if (installedExtensions.includes('ai-brain')) {
       activeExtensionsList.push({ id: 'trust-brain', label: 'Trust Brain AI', icon: Brain, badge: 'AI' });

@@ -953,7 +953,7 @@ export default function App() {
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                   <div>
-                    <h1 className="text-xl font-display font-bold text-slate-900">24/7 Living Passport AI Swarm</h1>
+                    <h1 className="text-xl font-display font-bold text-slate-900">Passport Worker Console</h1>
                     <p className="text-xs text-slate-500 font-sans mt-1">
                       Select a Software Passport to inspect server-side scanner jobs and their recorded outputs.
                     </p>

@@ -98,6 +98,8 @@ describe('production truth regressions', () => {
   it('backs AI Brain and AI Swarm with supported server operations only', () => {
     const brain = read('src/components/TrustBrainView.tsx');
     const swarm = read('src/components/PassportSwarmView.tsx');
+    const dashboard = read('src/components/DashboardView.tsx');
+    const scans = read('src/components/ScansView.tsx');
     const server = read('server.ts');
 
     expect(brain).toContain('/trust-observation');
@@ -107,6 +109,12 @@ describe('production truth regressions', () => {
     expect(swarm).toContain("jobType: 'osv_manifest_scan'");
     expect(swarm).not.toContain('automated_integrity_audit');
     expect(swarm).not.toContain('24/7 Continuous Monitoring');
+    expect(dashboard).toContain("agentId: 'osv-worker'");
+    expect(dashboard).toContain("jobType: 'osv_manifest_scan'");
+    expect(scans).toContain("agentId: 'osv-worker'");
+    expect(scans).toContain("jobType: 'osv_manifest_scan'");
+    expect(dashboard).not.toContain('automated_compliance_check');
+    expect(scans).not.toContain('automated_compliance_check');
     expect(server).toContain('eq(agentJobsTable.tenantId, req.user!.tenantId)');
   });
 

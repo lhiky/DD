@@ -298,7 +298,7 @@ export default function ScansView({ scans, onTriggerNewScan, clients, assets, on
     }
   };
 
-  // Executing actual backend AI Agent scanner with real-time logs polling
+  // Dispatches the supported independent OSV worker and polls persisted job state.
   const runActualScan = async (targetName: string, chosenClient: string = 'Vanguard Grid Operators') => {
     setIsScanning(true);
     setScanCompleted(false);
@@ -319,8 +319,8 @@ export default function ScansView({ scans, onTriggerNewScan, clients, assets, on
 
     setScanLogs(l => [
       ...l, 
-      `[INFO] Target matched to verified Passport: ${matchedPassport.name} (v${matchedPassport.version})`,
-      `[INFO] Initiating comprehensive full-stack 8-engine scan queue...`
+      `[INFO] Target matched to Passport: ${matchedPassport.name} (v${matchedPassport.version})`,
+      `[INFO] Persisting an OSV manifest-component scan job...`
     ]);
 
     try {
@@ -328,18 +328,18 @@ export default function ScansView({ scans, onTriggerNewScan, clients, assets, on
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          agentId: 'comprehensive_scanner',
+          agentId: 'osv-worker',
           passportId: matchedPassport.id,
-          jobType: 'automated_compliance_check'
+          jobType: 'osv_manifest_scan'
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to dispatch secure scanning job to background queue.');
+      const responseBody = await response.json().catch(() => ({}));
+      if (!response.ok && !(response.status === 409 && responseBody.jobId)) {
+        throw new Error(responseBody.message || responseBody.error || 'Failed to dispatch the OSV worker job.');
       }
 
-      const job = await response.json();
-      const jobId = job.id;
+      const jobId = responseBody.id || responseBody.jobId;
 
       // Start periodic real-evidence state polling
       const interval = setInterval(async () => {
@@ -358,7 +358,7 @@ export default function ScansView({ scans, onTriggerNewScan, clients, assets, on
               setScanProgress(currentJob.progress || 0);
               setScanLogs(logsList.map((l: any) => `[${l.level.toUpperCase()}] ${l.message}`));
 
-              if (currentJob.status === 'Success' || currentJob.status === 'Failed') {
+              if (currentJob.status === 'Completed' || currentJob.status === 'Failed') {
                 clearInterval(interval);
                 setIsScanning(false);
                 setScanCompleted(true);

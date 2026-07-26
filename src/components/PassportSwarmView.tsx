@@ -92,7 +92,7 @@ export default function PassportSwarmView({ passport }: PassportSwarmViewProps) 
     <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h2 className="text-lg font-bold">AI Swarm — Supported Worker</h2>
+          <h2 className="text-lg font-bold">Security worker — live status</h2>
           <p className="mt-1 text-sm text-slate-500">
             SPR currently runs one independent worker here: OSV manifest-component scanning. Other advertised agents are unavailable.
           </p>
