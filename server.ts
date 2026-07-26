@@ -64,6 +64,7 @@ import {
   REPOSITORY_SCANNER_CONFIGURATION
 } from './src/utils/repository-scan.ts';
 import { buildTrustObservation } from './src/utils/trust-observation.ts';
+import { verifyEvidenceIntegrity } from './src/utils/evidence-integrity.ts';
 
 // Load environment variables
 dotenv.config();
@@ -2204,11 +2205,11 @@ async function startServer() {
           id: item.id,
           name: item.name,
           type: item.type,
-          status: item.verified === 1 ? 'VERIFIED' : item.verificationFailureReason ? 'FAILED' : 'OBSERVED',
+          status: item.verified === 1 ? 'PARTIALLY_VERIFIED' : item.verificationFailureReason ? 'FAILED' : 'OBSERVED',
           source: item.engineId,
           timestamp: item.timestamp,
           verificationMethod: item.verified === 1
-            ? `Server-side verification recorded by ${item.engineId}`
+            ? `Server-side SHA-256 payload integrity verification; semantic truth was not verified`
             : `Evidence collected by ${item.engineId}; independent verification not recorded`,
           failureReason: item.verificationFailureReason
         })),
@@ -2222,6 +2223,79 @@ async function startServer() {
     } catch (err) {
       trackAndLogError(err, `GET /api/passports/${req.params.id}/trust-observation`);
       res.status(500).json({ error: 'Failed to build trust observation' });
+    }
+  });
+
+  app.get('/api/evidence/:id/verification', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const tenantId = req.user!.tenantId;
+    const item = await db.select().from(evidenceItemsTable)
+      .where(and(eq(evidenceItemsTable.id, req.params.id), eq(evidenceItemsTable.tenantId, tenantId)))
+      .then(rows => rows[0]);
+    if (!item) return res.status(404).json({ error: 'Evidence item not found' });
+    res.json({
+      evidenceId: item.id,
+      assetId: item.assetId,
+      source: item.engineId,
+      timestamp: item.timestamp,
+      evidenceType: item.type,
+      scope: 'payload-integrity-only',
+      verified: item.verified === 1,
+      failureReason: item.verificationFailureReason,
+      statement: item.verified === 1
+        ? 'The persisted payload bytes match the stored SHA-256 digest. The evidence claim itself was not semantically verified.'
+        : 'Payload integrity has not been verified successfully.'
+    });
+  });
+
+  app.post('/api/evidence/:id/verify-integrity', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+    try {
+      const tenantId = req.user!.tenantId;
+      const item = await db.select().from(evidenceItemsTable)
+        .where(and(eq(evidenceItemsTable.id, req.params.id), eq(evidenceItemsTable.tenantId, tenantId)))
+        .then(rows => rows[0]);
+      if (!item) return res.status(404).json({ error: 'Evidence item not found' });
+
+      const result = verifyEvidenceIntegrity(item.rawContent, item.hash);
+      if (result.outcome === 'rejected') {
+        return res.status(413).json({
+          evidenceId: item.id,
+          scope: 'payload-integrity-only',
+          ...result
+        });
+      }
+
+      await db.update(evidenceItemsTable)
+        .set({
+          verified: result.verified ? 1 : 0,
+          verificationFailureReason: result.failureReason
+        })
+        .where(and(eq(evidenceItemsTable.id, item.id), eq(evidenceItemsTable.tenantId, tenantId)));
+
+      await addAuditLogBlock(
+        req.user!.email,
+        'Evidence Payload Integrity Checked',
+        req.ip || '127.0.0.1',
+        result.verified ? 'Success' : 'Fail',
+        `Evidence ${item.id}: ${result.outcome}; scope=payload-integrity-only`,
+        tenantId
+      );
+
+      res.status(result.verified ? 200 : 409).json({
+        evidenceId: item.id,
+        assetId: item.assetId,
+        source: item.engineId,
+        timestamp: item.timestamp,
+        evidenceType: item.type,
+        verificationMethod: 'SHA-256 recomputation over exact persisted UTF-8 payload bytes',
+        scope: 'payload-integrity-only',
+        statement: result.verified
+          ? 'Payload bytes match the stored digest. This does not verify the semantic truth of the evidence.'
+          : 'Payload bytes do not match the stored digest.',
+        ...result
+      });
+    } catch (err) {
+      trackAndLogError(err, `POST /api/evidence/${req.params.id}/verify-integrity`);
+      res.status(500).json({ error: 'Failed to verify evidence payload integrity' });
     }
   });
 
