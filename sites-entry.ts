@@ -4,12 +4,13 @@ interface SitesEnvironment {
   };
 }
 
+const API_ORIGIN = 'https://api-production-2722.up.railway.app';
+
 const unavailableApiResponse = (): Response =>
   Response.json(
     {
-      error: 'SERVICE_UNAVAILABLE',
-      message:
-        'SPR server APIs are pending production runtime configuration and are not available on this deployment.',
+      error: 'UPSTREAM_UNAVAILABLE',
+      message: 'The SPR API is temporarily unavailable.',
     },
     {
       status: 503,
@@ -38,7 +39,15 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/api/')) {
-      return withSecurityHeaders(unavailableApiResponse());
+      const upstreamUrl = new URL(`${url.pathname}${url.search}`, API_ORIGIN);
+
+      try {
+        const upstreamResponse = await fetch(new Request(upstreamUrl, request));
+        return withSecurityHeaders(upstreamResponse);
+      } catch (error) {
+        console.error('SPR API proxy request failed', error);
+        return withSecurityHeaders(unavailableApiResponse());
+      }
     }
 
     let response = await env.ASSETS.fetch(request);
