@@ -42,8 +42,28 @@ export default {
       const upstreamUrl = new URL(`${url.pathname}${url.search}`, API_ORIGIN);
 
       try {
-        const upstreamResponse = await fetch(new Request(upstreamUrl, request));
-        return withSecurityHeaders(upstreamResponse);
+        const upstreamHeaders = new Headers(request.headers);
+        upstreamHeaders.delete('if-none-match');
+        upstreamHeaders.delete('if-modified-since');
+        upstreamHeaders.set('cache-control', 'no-store');
+
+        const upstreamRequest = new Request(upstreamUrl, {
+          method: request.method,
+          headers: upstreamHeaders,
+          body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+          redirect: 'manual',
+        });
+        const upstreamResponse = await fetch(upstreamRequest);
+        const responseHeaders = new Headers(upstreamResponse.headers);
+        responseHeaders.set('cache-control', 'no-store');
+        responseHeaders.delete('etag');
+        responseHeaders.delete('last-modified');
+
+        return withSecurityHeaders(new Response(upstreamResponse.body, {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          headers: responseHeaders,
+        }));
       } catch (error) {
         console.error('SPR API proxy request failed', error);
         return withSecurityHeaders(unavailableApiResponse());

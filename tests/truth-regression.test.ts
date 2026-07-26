@@ -138,6 +138,13 @@ describe('production truth regressions', () => {
     expect(server).toContain("app.get('/health/ready'");
     expect(server).toContain("dependencies: { database: database.db }");
   });
+
+  it('does not forward conditional browser caching to authenticated API routes', () => {
+    const proxy = read('sites-entry.ts');
+    expect(proxy).toContain("upstreamHeaders.delete('if-none-match')");
+    expect(proxy).toContain("upstreamHeaders.delete('if-modified-since')");
+    expect(proxy).toContain("responseHeaders.set('cache-control', 'no-store')");
+  });
 });
 
 describe('independent OSV worker truth boundaries', () => {
