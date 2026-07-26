@@ -1,0 +1,6 @@
+{
+  "name": "Software Passport Registry",
+  "description": "Enterprise Software Passport Registry (SPR) for Managed Service Providers (MSPs) to audit software supply chain trust, compliance, and vendor risks across clients.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
