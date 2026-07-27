@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 "# Railway env var setter\n# Reads keys from .env.example and sets variables in Railway using the Railway CLI.\n# It prefers values from a local .env file if present, otherwise prompts you to enter them.\n" | Out-File -Encoding utf8 scripts\README.txt
 
 param(
@@ -26,7 +26,7 @@ Set-Location $repoRoot
 
 $envExample = Join-Path $repoRoot '.env.example'
 if (-not (Test-Path $envExample)) {
-    Write-Error "Cannot find .env.example in $repoRoot"
+    Write-Error 'Cannot find .env.example in $repoRoot'
     exit 1
 }
 
@@ -35,16 +35,21 @@ $defaults = Parse-EnvFile $envExample
 $local = Parse-EnvFile $envFile
 
 $railwayCmd = Get-Command railway -ErrorAction SilentlyContinue
-if (-not $railwayCmd) {
-    Write-Error "Railway CLI not found. Install it and run 'railway login' first."
-    exit 1
+if ($railwayCmd) {
+    $railwayExe = 'railway'
+} else {
+    Write-Host 'Global Railway CLI not found; using local npx railway instead.'
+    $railwayExe = 'npx railway'
 }
 
 foreach ($k in $defaults.Keys) {
-    $exampleVal = $defaults[$k]
     $prefilled = $null
-    if ($local.ContainsKey($k) -and $local[$k]) { $prefilled = $local[$k] }
-    elseif ($env:$k) { $prefilled = $env:$k }
+    if ($local.ContainsKey($k) -and $local[$k]) {
+        $prefilled = $local[$k]
+    } else {
+        $envItem = Get-Item -Path "env:$k" -ErrorAction SilentlyContinue
+        if ($envItem) { $prefilled = $envItem.Value }
+    }
 
     if (-not $Force) {
         if ($prefilled) {
@@ -64,10 +69,10 @@ foreach ($k in $defaults.Keys) {
     }
 
     Write-Host "Setting Railway variable: $k"
-    railway variables set $k "$value"
+    cmd.exe /c "$railwayExe variables set $k \"$value\""
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to set variable $k"
     }
 }
 
-Write-Host "Done. Review variables in the Railway dashboard or run 'railway variables list'."
+Write-Host 'Done. Review variables in the Railway dashboard or run "railway variables list".'

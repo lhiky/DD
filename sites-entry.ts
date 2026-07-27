@@ -2,9 +2,8 @@ interface SitesEnvironment {
   ASSETS: {
     fetch(request: Request): Promise<Response>;
   };
+  API_ORIGIN?: string;
 }
-
-const API_ORIGIN = 'https://api-production-2722.up.railway.app';
 
 const unavailableApiResponse = (): Response =>
   Response.json(
@@ -39,7 +38,8 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/api/')) {
-      const upstreamUrl = new URL(`${url.pathname}${url.search}`, API_ORIGIN);
+      const upstreamOrigin = env.API_ORIGIN || 'https://api-production-2722.up.railway.app';
+      const upstreamUrl = new URL(`${url.pathname}${url.search}`, upstreamOrigin);
 
       try {
         const upstreamHeaders = new Headers(request.headers);

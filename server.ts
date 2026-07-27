@@ -538,26 +538,35 @@ async function startServer() {
 
   app.disable('x-powered-by');
 
+  const isDevMode = !isProduction;
+  const scriptSources = ["'self'", "https://apis.google.com"];
+  const connectSources = [
+    "'self'",
+    "https://*.googleapis.com",
+    "https://*.google.com",
+    "https://*.firebaseapp.com",
+    "https://*.firebaseio.com",
+    "wss://*.run.app",
+    "https://*.run.app"
+  ];
+
+  if (isDevMode) {
+    scriptSources.push("'unsafe-inline'");
+    connectSources.push('ws://localhost:24678');
+  }
+
   // 1. Configure robust security headers. In production, do not allow unsafe inline scripts or eval.
   app.use(helmet({
     frameguard: process.env.ALLOW_IFRAME === 'true' ? false : { action: 'deny' },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "https://apis.google.com"],
-        connectSrc: [
-          "'self'",
-          "https://*.googleapis.com",
-          "https://*.google.com",
-          "https://*.firebaseapp.com",
-          "https://*.firebaseio.com",
-          "wss://*.run.app",
-          "https://*.run.app"
-        ],
+        scriptSrc: scriptSources,
+        connectSrc: connectSources,
         frameSrc: ["'self'", "https://*.firebaseapp.com", "https://*.google.com"],
         frameAncestors: ["'self'", "https://*.google.com", "https://*.run.app", "https://*.google.dev"],
         imgSrc: ["'self'", "data:", "https://*.googleusercontent.com"],
-        styleSrc: ["'self'", "https://fonts.googleapis.com"],
+        styleSrc: ["'self'", "https://fonts.googleapis.com", ...(isDevMode ? ["'unsafe-inline'"] : [])],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
