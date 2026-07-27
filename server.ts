@@ -4205,7 +4205,7 @@ Generate a short, high-quality, and highly structured advisory response (using c
     });
   });
 
-  app.get('/', (_req, res) => {
+  app.get('/api/service-identity', (_req, res) => {
     res.status(200).json(buildServiceIdentity(
       process.env.NODE_ENV || 'development',
       process.env.SPR_VERSION || process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown'
@@ -4231,7 +4231,7 @@ Generate a short, high-quality, and highly structured advisory response (using c
     app.use(vite.middlewares);
   } else {
     console.log('Running in Production mode. Serving built assets...');
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), 'dist', 'client');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
