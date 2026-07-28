@@ -21,38 +21,224 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-// 1. Simple, robust in-memory rate limiter to prevent API abuse
-const rateLimitWindowMs = 60 * 1000; // 1 minute
-const maxRequestsPerWindow = 100;    // max 100 requests per window
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+// 1. Shared-store aware rate limiter to prevent API abuse
+let rateLimitWindowMs = 60 * 1000; // 1 minute
+let maxRequestsPerWindow = 100;    // max 100 requests per window
+const isTestMode = () => process.env.NODE_ENV !== 'production';
 
-export const rateLimiter = (req: Request, res: Response, next: NextFunction) => {
+// For tests: allow overriding rate limit configuration
+export function setRateLimiterConfig(opts: { windowMs?: number; maxRequests?: number }) {
+  if (!isTestMode()) {
+    throw new Error('setRateLimiterConfig is only available in test mode');
+  }
+  if (typeof opts.windowMs === 'number') rateLimitWindowMs = opts.windowMs;
+  if (typeof opts.maxRequests === 'number') maxRequestsPerWindow = opts.maxRequests;
+}
+
+interface RateLimitRecord {
+  count: number;
+  resetAt: number;
+}
+
+interface RateLimitStore {
+  incr(key: string, windowMs: number, limit: number): Promise<RateLimitRecord>;
+  get?(key: string): Promise<RateLimitRecord | undefined | null>;
+}
+
+// Simple in-memory store used for development and tests
+class InMemoryStore implements RateLimitStore {
+  private map = new Map<string, { count: number; resetAt: number }>();
+
+  async incr(key: string, windowMs: number, limit: number) {
+    const now = Date.now();
+    const rec = this.map.get(key);
+    if (!rec || now > rec.resetAt) {
+      const next = { count: 1, resetAt: now + windowMs };
+      this.map.set(key, next);
+      return next;
+    }
+    rec.count += 1;
+    return rec;
+  }
+
+  async get(key: string) {
+    return this.map.get(key);
+  }
+}
+
+interface AtomicRateLimitClient {
+  increment(script: string, key: string, windowMs: number, limit: number): Promise<unknown>;
+}
+
+export class IORedisAtomicClient implements AtomicRateLimitClient {
+  constructor(
+    private readonly client: {
+      eval(script: string, numKeys: number, ...args: Array<string | number>): Promise<unknown>;
+    }
+  ) {}
+
+  increment(script: string, key: string, windowMs: number, limit: number) {
+    return this.client.eval(script, 1, key, String(windowMs), String(limit));
+  }
+}
+
+export function createAtomicRateLimitClient(provider: 'ioredis' | 'upstash', client: any): AtomicRateLimitClient {
+  if (provider === 'ioredis') {
+    if (!client || typeof client.eval !== 'function') {
+      throw new Error('Invalid ioredis client; expected eval(script, numKeys, ...args)');
+    }
+    return new IORedisAtomicClient(client);
+  }
+
+  // Upstash support has been removed from the production path. Keep the type signature
+  // so tests may assert rejection of unsupported configurations, but do not attempt
+  // to provide a runtime adapter here.
+  if (provider === 'upstash') {
+    throw new Error('Upstash provider is not supported in this deployment');
+  }
+
+  throw new Error(`Unsupported rate limit provider: ${provider}`);
+}
+
+export class RedisStore implements RateLimitStore {
+  private readonly lua =
+    `local count = redis.call("INCR", KEYS[1])\n` +
+    `local ttl = redis.call("PTTL", KEYS[1])\n` +
+    `if count == 1 or ttl < 0 then\n` +
+    `  redis.call("PEXPIRE", KEYS[1], ARGV[1])\n` +
+    `  ttl = tonumber(ARGV[1])\n` +
+    `end\n` +
+    `return {count, ttl}`;
+
+  constructor(
+    private readonly atomicClient: AtomicRateLimitClient,
+    private readonly rawClient?: {
+      get?: (key: string) => Promise<unknown>;
+      pttl?: (key: string) => Promise<unknown>;
+    }
+  ) {}
+
+  async incr(key: string, windowMs: number, limit: number) {
+    const now = Date.now();
+    const res = await this.atomicClient.increment(this.lua, key, windowMs, limit);
+
+    if (!Array.isArray(res) || res.length < 2) {
+      throw new Error('Unexpected redis eval response');
+    }
+
+    const count = Number(res[0]);
+    const ttl = Number(res[1]);
+
+    if (!Number.isFinite(count) || count < 0) {
+      throw new Error('Unexpected redis eval response');
+    }
+    if (!Number.isFinite(ttl) || ttl <= 0) {
+      throw new Error('Unexpected redis eval response');
+    }
+
+    return { count, resetAt: now + ttl };
+  }
+
+  async get(key: string) {
+    if (!this.rawClient) return undefined;
+    const val = this.rawClient.get ? await this.rawClient.get(key) : null;
+    if (val == null) return undefined;
+    const count = Number(val);
+    if (!Number.isFinite(count)) return undefined;
+    let ttl = -1;
+    if (typeof this.rawClient.pttl === 'function') {
+      ttl = Number(await this.rawClient.pttl(key));
+    }
+    if (!Number.isFinite(ttl) || ttl < 0) ttl = 0;
+    return { count, resetAt: Date.now() + ttl };
+  }
+}
+
+// Try to initialize a shared store using existing dependencies if available
+let sharedStore: RateLimitStore = new InMemoryStore();
+let hasIoredis = false;
+let IORedis: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const req: any = require;
+  try { IORedis = req('ioredis'); hasIoredis = true; } catch (e) {}
+} catch (e) {}
+
+export function createSharedRateLimitStoreFromEnv(): RateLimitStore {
+  if (process.env.NODE_ENV !== 'production') {
+    return new InMemoryStore();
+  }
+
+  // Ambiguous configuration detection: if both legacy UPSTASH env and REDIS_URL are set,
+  // this likely indicates a misconfigured environment. Reject to avoid silent provider
+  // selection.
+  if (process.env.REDIS_URL && process.env.UPSTASH_REDIS_REST_URL) {
+    throw new Error('Ambiguous rate-limit store configuration: both REDIS_URL and UPSTASH_REDIS_REST_URL are set');
+  }
+
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    throw new Error('Missing production shared store configuration (REDIS_URL)');
+  }
+
+  if (!hasIoredis || !IORedis) {
+    throw new Error('Missing ioredis dependency for REDIS_URL-backed rate limiting');
+  }
+
+  const client = new IORedis(redisUrl);
+  return new RedisStore(createAtomicRateLimitClient('ioredis', client), client);
+}
+
+if (process.env.NODE_ENV === 'production') {
+  sharedStore = createSharedRateLimitStoreFromEnv();
+}
+
+// Export helper for tests to inject a store
+export function setRateLimiterStore(s: RateLimitStore) {
+  if (!isTestMode()) {
+    throw new Error('setRateLimiterStore is only available in test mode');
+  }
+  sharedStore = s;
+}
+
+export const rateLimiter = async (req: Request, res: Response, next: NextFunction) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const record = rateLimitMap.get(ip);
+  const tenantId = (req as AuthenticatedRequest).user?.tenantId;
+  const key = tenantId
+    ? `rl:tenant:${tenantId}:ip:${ip}`
+    : `rl:ip:${ip}`;
 
-  if (!record || now > record.resetTime) {
-    rateLimitMap.set(ip, {
-      count: 1,
-      resetTime: now + rateLimitWindowMs,
-    });
-    // Set standard rate limit headers
-    res.setHeader('X-RateLimit-Limit', maxRequestsPerWindow);
-    res.setHeader('X-RateLimit-Remaining', maxRequestsPerWindow - 1);
+  try {
+    const counter = await sharedStore.incr(key, rateLimitWindowMs, maxRequestsPerWindow);
+    if (
+      !counter ||
+      !Number.isFinite(counter.count) ||
+      !Number.isFinite(counter.resetAt)
+    ) {
+      throw new Error('Malformed shared store response');
+    }
+
+    const remaining = Math.max(0, maxRequestsPerWindow - counter.count);
+    res.setHeader('X-RateLimit-Limit', String(maxRequestsPerWindow));
+    res.setHeader('X-RateLimit-Remaining', String(remaining));
+    res.setHeader('X-RateLimit-Reset', String(Math.ceil(counter.resetAt / 1000)));
+    if (counter.count > maxRequestsPerWindow) {
+      res.setHeader('Retry-After', String(Math.ceil((counter.resetAt - Date.now()) / 1000)));
+      return res.status(429).json({ error: 'Too Many Requests' });
+    }
     return next();
-  }
-
-  if (record.count >= maxRequestsPerWindow) {
-    return res.status(429).json({
-      error: 'Too Many Requests',
-      message: 'Rate limit exceeded. Please try again in a minute.',
+  } catch (err) {
+    // Fail closed for security-sensitive middleware. Return a safe, non-leaking error body.
+    const requestId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : String(Date.now()) + '-' + Math.floor(Math.random() * 1000000);
+    console.error('[RateLimiter] Shared store error: (requestId=%s) %s', requestId, err?.message || err);
+    return res.status(503).json({
+      error: {
+        code: 'RATE_LIMIT_STORE_UNAVAILABLE',
+        message: 'This operation is temporarily unavailable.',
+        requestId,
+      }
     });
   }
-
-  record.count++;
-  res.setHeader('X-RateLimit-Limit', maxRequestsPerWindow);
-  res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequestsPerWindow - record.count));
-  next();
 };
 
 // 2. Multi-Tenant Sync & Authentication Middleware
