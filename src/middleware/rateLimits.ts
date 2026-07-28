@@ -66,18 +66,22 @@ export class RedisStore {
   async incr(key: string, windowMs: number, limit: number): Promise<Counter> {
     const now = Date.now();
     try {
-      // Atomic Lua: if key doesn't exist, set to 1 and set PX expiry; if exists and < limit, INCR; else return current
-      const lua = `local cur = redis.call('GET', KEYS[1])\nif not cur then\n  redis.call('SET', KEYS[1], 1, 'PX', ARGV[1])\n  return {1, ARGV[1]}\nend\nlocal curNum = tonumber(cur)\nlocal lim = tonumber(ARGV[2])\nif curNum < lim then\n  local v = redis.call('INCR', KEYS[1])\n  local ttl = redis.call('PTTL', KEYS[1])\n  return {v, ttl}\nelse\n  local ttl = redis.call('PTTL', KEYS[1])\n  return {curNum, ttl}\nend`;
+      // Atomic Lua script: increment, get ttl, set expiry when first created or when ttl missing
+      const lua = `local count = redis.call("INCR", KEYS[1])\nlocal ttl = redis.call("PTTL", KEYS[1])\nif count == 1 or ttl < 0 then\n  redis.call("PEXPIRE", KEYS[1], ARGV[1])\n  ttl = tonumber(ARGV[1])\nend\nreturn {count, ttl}`;
 
       let res: any;
       if (typeof this.client.eval === 'function') {
-        // ioredis and many Redis clients: eval(script, numKeys, key, args...)
-        res = await this.client.eval(lua, 1, key, windowMs, limit);
+        // ioredis and compatible clients: eval(script, numKeys, key, args...)
+        // pass windowMs and limit as ARGV[1], ARGV[2] (limit isn't needed by script but keep parity)
+        res = await this.client.eval(lua, 1, key, String(windowMs), String(limit));
       } else if (typeof this.client.execute === 'function') {
-        // Upstash REST client has execute for raw commands; try eval via execute
+        // Upstash REST client supports execute for raw commands; use EVAL via execute
+        // Upstash expects string arguments; ARGV come after the KEYS count and keys
+        // execute('EVAL', script, numkeys, key, arg1, arg2)
         res = await this.client.execute('EVAL', lua, '1', key, String(windowMs), String(limit));
       } else if (typeof this.client.evalsha === 'function') {
-        res = await this.client.eval(lua, 1, key, windowMs, limit);
+        // fallback
+        res = await this.client.eval(lua, 1, key, String(windowMs), String(limit));
       } else {
         // Fallback to non-atomic path
         const count: number = Number(await this.client.incr(key));
@@ -96,7 +100,8 @@ export class RedisStore {
           ttl = Number.isNaN(secs) ? -1 : secs * 1000;
         }
         if (ttl < 0) ttl = windowMs;
-        return { count: Math.min(count, limit), resetAt: now + ttl };
+        // return raw count
+        return { count, resetAt: now + ttl };
       }
 
       // normalize response: some clients return strings
@@ -104,7 +109,8 @@ export class RedisStore {
         const c = Number(res[0]);
         let ttl = Number(res[1]);
         if (ttl <= 0) ttl = windowMs;
-        return { count: Math.min(c, limit), resetAt: now + Number(ttl) };
+        // return raw count (do not cap) so middleware can decide blocking semantics
+        return { count: c, resetAt: now + Number(ttl) };
 
       }
 
@@ -163,6 +169,11 @@ if (process.env.REDIS_URL && hasIoredis) {
   store = new InMemoryStore();
 }
 
+// For tests only: allow replacing the active store (e.g., inject mock RedisStore)
+export function setRateLimitStore(s: { incr: (k: string, windowMs: number, limit: number) => Promise<Counter>; get: (k: string) => Promise<Counter | undefined> }) {
+  store = s;
+}
+
 function headerSafeInt(value: any): number {
   const n = parseInt(String(value || '0'), 10);
   return Number.isNaN(n) ? 0 : n;
@@ -190,8 +201,8 @@ function deriveTenantKey(req: Request): string | null {
   return null;
 }
 
-function buildMiddleware(opts: { name: string; windowMs: number; limit: number; scope: 'user' | 'tenant' | 'ip' }) {
-  const { name, windowMs, limit, scope } = opts;
+function buildMiddleware(opts: { name: string; windowMs: number; limit: number; scope: 'user' | 'tenant' | 'ip', strict?: boolean }) {
+  const { name, windowMs, limit, scope, strict = false } = opts;
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       let key = '';
@@ -210,7 +221,12 @@ function buildMiddleware(opts: { name: string; windowMs: number; limit: number; 
       try {
         counter = await store.incr(storeKey, windowMs, limit);
       } catch (err) {
-        // fail-open on transient store errors but log
+        // Policy-specific failure behavior: strict policies return 503 to avoid allowing sensitive ops,
+        // non-strict policies fail-open (allow request).
+        if (strict) {
+          console.warn('[RateLimiter] Store error on strict policy, rejecting with 503');
+          return res.status(503).json({ error: 'Service Unavailable' });
+        }
         console.warn('[RateLimiter] Store error, allowing request:', err);
         return next();
       }
@@ -236,11 +252,11 @@ function buildMiddleware(opts: { name: string; windowMs: number; limit: number; 
   };
 }
 
-export const authRateLimiter = buildMiddleware({ name: 'auth', windowMs: 60 * 1000, limit: 5, scope: 'user' });
-export const scansRateLimiter = buildMiddleware({ name: 'scans', windowMs: 60 * 1000, limit: 10, scope: 'tenant' });
-export const exportsRateLimiter = buildMiddleware({ name: 'exports', windowMs: 60 * 1000, limit: 5, scope: 'tenant' });
-export const tenantAdminRateLimiter = buildMiddleware({ name: 'tenant-admin', windowMs: 60 * 1000, limit: 3, scope: 'tenant' });
-export const publicRateLimiter = buildMiddleware({ name: 'public', windowMs: 60 * 1000, limit: 30, scope: 'ip' });
+export const authRateLimiter = buildMiddleware({ name: 'auth', windowMs: 60 * 1000, limit: 5, scope: 'user', strict: true });
+export const scansRateLimiter = buildMiddleware({ name: 'scans', windowMs: 60 * 1000, limit: 10, scope: 'tenant', strict: true });
+export const exportsRateLimiter = buildMiddleware({ name: 'exports', windowMs: 60 * 1000, limit: 5, scope: 'tenant', strict: true });
+export const tenantAdminRateLimiter = buildMiddleware({ name: 'tenant-admin', windowMs: 60 * 1000, limit: 3, scope: 'tenant', strict: true });
+export const publicRateLimiter = buildMiddleware({ name: 'public', windowMs: 60 * 1000, limit: 30, scope: 'ip', strict: false });
 // Public limiter exported for test and public-route usage; server imports only what it needs.
 
 export { InMemoryStore };
