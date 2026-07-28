@@ -5,7 +5,7 @@ import { RedisStore } from '../src/middleware/rateLimits';
 const REDIS_URL = process.env.REDIS_URL;
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
 
-// Minimal in-test mock client implementing incr/pexpire/pttl/get
+// Minimal in-test mock client implementing incr/pexpire/pttl/get and eval (atomic script)
 class MockRedisClient {
   private store = new Map<string, { val: number; expiresAt?: number }>();
 
@@ -42,6 +42,25 @@ class MockRedisClient {
     const rec = this.store.get(key);
     if (!rec) return null;
     return String(rec.val);
+  }
+
+  // Eval implements the specific Lua logic used in RedisStore.incr for tests
+  // signature: eval(lua, numKeys, key, windowMs, limit)
+  async eval(_lua: string, _numKeys: number, key: string, windowMs: number, limit: number) {
+    const now = Date.now();
+    const rec = this.store.get(key);
+    if (!rec || (rec.expiresAt && now > rec.expiresAt)) {
+      this.store.set(key, { val: 1, expiresAt: now + Number(windowMs) });
+      return [1, Number(windowMs)];
+    }
+    const cur = rec.val;
+    if (cur < Number(limit)) {
+      rec.val += 1;
+      const ttl = rec.expiresAt ? rec.expiresAt - now : Number(windowMs);
+      return [rec.val, ttl];
+    }
+    const ttl = rec.expiresAt ? rec.expiresAt - now : Number(windowMs);
+    return [cur, ttl];
   }
 }
 

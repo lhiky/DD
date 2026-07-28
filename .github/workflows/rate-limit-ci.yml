@@ -1,0 +1,35 @@
+name: Rate-Limit CI
+
+on:
+  push:
+    branches: [ merge/hardened-integration, main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-rate-limits:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run typecheck
+        run: npm run typecheck
+      - name: Run tests (rate-limit concurrency)
+        run: npm test -- --run --filter "rateLimits.concurrent" --reporter dot
