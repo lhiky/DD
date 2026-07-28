@@ -82,19 +82,12 @@ export class IORedisAtomicClient implements AtomicRateLimitClient {
   }
 }
 
-export function createAtomicRateLimitClient(provider: 'ioredis' | 'upstash', client: any): AtomicRateLimitClient {
+export function createAtomicRateLimitClient(provider: 'ioredis', client: any): AtomicRateLimitClient {
   if (provider === 'ioredis') {
     if (!client || typeof client.eval !== 'function') {
       throw new Error('Invalid ioredis client; expected eval(script, numKeys, ...args)');
     }
     return new IORedisAtomicClient(client);
-  }
-
-  // Upstash support has been removed from the production path. Keep the type signature
-  // so tests may assert rejection of unsupported configurations, but do not attempt
-  // to provide a runtime adapter here.
-  if (provider === 'upstash') {
-    throw new Error('Upstash provider is not supported in this deployment');
   }
 
   throw new Error(`Unsupported rate limit provider: ${provider}`);
@@ -169,13 +162,7 @@ export function createSharedRateLimitStoreFromEnv(): RateLimitStore {
     return new InMemoryStore();
   }
 
-  // Ambiguous configuration detection: if both legacy UPSTASH env and REDIS_URL are set,
-  // this likely indicates a misconfigured environment. Reject to avoid silent provider
-  // selection.
-  if (process.env.REDIS_URL && process.env.UPSTASH_REDIS_REST_URL) {
-    throw new Error('Ambiguous rate-limit store configuration: both REDIS_URL and UPSTASH_REDIS_REST_URL are set');
-  }
-
+  // Production must use REDIS_URL with ioredis. Reject when configuration or dependency is missing.
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
     throw new Error('Missing production shared store configuration (REDIS_URL)');

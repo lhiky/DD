@@ -253,14 +253,14 @@ describe('security.rateLimiter provider adapters', () => {
 
   it('rejects unsupported atomic client configurations', () => {
     expect(() => createAtomicRateLimitClient('ioredis', { eval: undefined })).toThrow();
-    expect(() => createAtomicRateLimitClient('upstash', { eval: undefined })).toThrow();
+    // Calling with an unsupported provider should also throw (use any to bypass TS literal typing)
+    expect(() => (createAtomicRateLimitClient as any)('upstash', { eval: undefined })).toThrow();
   });
 
-  it('rejects ambiguous provider configuration when both env vars are set', () => {
+  it('rejects missing REDIS_URL in production', () => {
     process.env.NODE_ENV = 'production';
-    process.env.REDIS_URL = 'redis://localhost:6379';
-    process.env.UPSTASH_REDIS_REST_URL = 'https://example.upstash.io';
-    expect(() => createSharedRateLimitStoreFromEnv()).toThrow(/Ambiguous rate-limit store configuration/);
+    delete process.env.REDIS_URL;
+    expect(() => createSharedRateLimitStoreFromEnv()).toThrow(/Missing production shared store configuration/);
   });
 
   it('prevents test-only setters in production mode', () => {
