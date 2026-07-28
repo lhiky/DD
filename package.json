@@ -74,6 +74,7 @@
     "uuid": "11.1.1",
     "retry-request": "8.0.4",
     "teeny-request": "10.1.4",
-    "gaxios": "7.3.0"
+    "gaxios": "7.3.0",
+    "tar": "7.5.22"
   }
 }
