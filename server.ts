@@ -42,6 +42,7 @@ import {
 } from './src/db/schema.ts';
 import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import { requireAuth, rateLimiter, requireRole, AuthenticatedRequest } from './src/middleware/security.ts';
+import { authRateLimiter, scansRateLimiter, exportsRateLimiter, tenantAdminRateLimiter, publicRateLimiter } from './src/middleware/rateLimits.ts';
 import {
   validateBody,
   revokeSessionSchema, recordLoginSchema,
@@ -1224,7 +1225,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/organization/invite', requireAuth, requireRole(['Owner', 'Admin']), validateBody(orgInviteSchema), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/organization/invite', requireAuth, tenantAdminRateLimiter, requireRole(['Owner', 'Admin']), validateBody(orgInviteSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const { email, role } = req.body;
       if (!email || !role) {
@@ -1258,7 +1259,7 @@ async function startServer() {
     }
   });
 
-  app.put('/api/organization/team/:userId/role', requireAuth, requireRole(['Owner', 'Admin']), validateBody(teamRoleSchema), async (req: AuthenticatedRequest, res) => {
+  app.put('/api/organization/team/:userId/role', requireAuth, tenantAdminRateLimiter, requireRole(['Owner', 'Admin']), validateBody(teamRoleSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const { userId } = req.params;
       const { role } = req.body;
@@ -1306,7 +1307,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/organization/team/:userId', requireAuth, requireRole(['Owner', 'Admin']), async (req: AuthenticatedRequest, res) => {
+  app.delete('/api/organization/team/:userId', requireAuth, tenantAdminRateLimiter, requireRole(['Owner', 'Admin']), async (req: AuthenticatedRequest, res) => {
     try {
       const { userId } = req.params;
       const tenantId = req.user!.tenantId;
@@ -1382,7 +1383,7 @@ async function startServer() {
     return secret;
   }
 
-  app.post('/api/organization/security/enroll-mfa', requireAuth, async (req: AuthenticatedRequest, res) => {
+  app.post('/api/organization/security/enroll-mfa', requireAuth, authRateLimiter, async (req: AuthenticatedRequest, res) => {
     try {
       const dbUser = await db.select({
         id: usersTable.id,
@@ -1426,7 +1427,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/organization/security/verify-mfa', requireAuth, validateBody(verifyMfaSchema), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/organization/security/verify-mfa', requireAuth, authRateLimiter, validateBody(verifyMfaSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const { code } = req.body;
       if (!code || typeof code !== 'string') {
@@ -2195,7 +2196,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/scans/schedules/:id/run', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/scans/schedules/:id/run', requireAuth, scansRateLimiter, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
       const { id } = req.params;
@@ -2727,7 +2728,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/evidence/:id/verify-integrity', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/evidence/:id/verify-integrity', requireAuth, tenantAdminRateLimiter, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
       const item = await db.select().from(evidenceItemsTable)
@@ -3000,7 +3001,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/scans', requireAuth, requireRole(['Admin']), validateBody(createScanSchema), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/scans', requireAuth, scansRateLimiter, requireRole(['Admin']), validateBody(createScanSchema), async (req: AuthenticatedRequest, res) => {
     const startTime = Date.now();
     try {
       const tenantId = req.user!.tenantId;
@@ -3336,7 +3337,7 @@ async function startServer() {
     }
   });
 
-  app.put('/api/integrations/:id', requireAuth, requireRole(['Admin']), validateBody(updateIntegrationSchema), async (req: AuthenticatedRequest, res) => {
+  app.put('/api/integrations/:id', requireAuth, tenantAdminRateLimiter, requireRole(['Admin']), validateBody(updateIntegrationSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
       const { id } = req.params;
@@ -3612,7 +3613,7 @@ async function startServer() {
   });
 
   // Tenant Offboarding Controls cascading erasure
-  app.post('/api/tenant/offboard', requireAuth, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/tenant/offboard', requireAuth, tenantAdminRateLimiter, requireRole(['Admin']), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
       console.log(`[Offboarding System] Request received from user: ${req.user!.email} to offboard tenant: ${tenantId}`);
@@ -3749,7 +3750,7 @@ async function startServer() {
     }
   );
 
-  app.get('/api/repository-scans/:jobId/report', requireAuth, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/repository-scans/:jobId/report', requireAuth, exportsRateLimiter, async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
       const job = await db.select().from(agentJobsTable).where(and(
@@ -3910,7 +3911,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/agent-jobs', requireAuth, requireRole(['Admin']), validateBody(createAgentJobSchema), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/agent-jobs', requireAuth, tenantAdminRateLimiter, requireRole(['Admin']), validateBody(createAgentJobSchema), async (req: AuthenticatedRequest, res) => {
     try {
       const tenantId = req.user!.tenantId;
       const { agentId, passportId, jobType } = req.body;
