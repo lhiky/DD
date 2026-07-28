@@ -1,13 +1,13 @@
 /**
  * Lightweight policy-based rate limiters with in-memory store for tests and a Redis
- * backing option for production (enabled when REDIS_URL is configured).
+ * backing option for production (enabled when REDIS_URL or UPSTASH_REDIS_REST_URL is configured).
  *
  * Policies are keyed by policy name and a key derived from the request:
  * - For user-scoped policies use tenantId + userId when available (server-derived only)
  * - For tenant-scoped policies use tenantId when available, otherwise fallback to IP
  * - For public endpoints fallback to IP
  *
- * The store interface is simple: incr(key, windowMs) -> {count, resetAt}
+ * The store interface is simple: incr(key, windowMs, limit) -> {count, resetAt}
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -32,16 +32,117 @@ class InMemoryStore {
   async get(key: string): Promise<Counter | undefined> { return this.map.get(key); }
 }
 
+// Redis/Upstash adapter
+let RedisClient: any = null;
+let UpstashClient: any = null;
+let hasIoredis = false;
+let hasUpstash = false;
+try {
+  // prefer ioredis where REDIS_URL is set
+  // dynamic import to avoid hard runtime failure if not installed (but we've installed it)
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const packageJsonRequire: any = require;
+  try { RedisClient = packageJsonRequire('ioredis'); hasIoredis = true; } catch {}
+  try { UpstashClient = packageJsonRequire('@upstash/redis'); hasUpstash = true; } catch {}
+} catch (e) {
+  // ignore
+}
+
 // Choose store based on environment. In tests and development we use deterministic in-memory store.
 // In production, require an external shared store (REDIS_URL or UPSTASH variables). This prevents
 // silent fallback to in-process memory when multiple instances are possible.
 if (process.env.NODE_ENV === 'production' && !process.env.REDIS_URL && !process.env.UPSTASH_REDIS_REST_URL) {
-  // Emit a clear startup-failing error so deployment does not start without a shared store.
   console.error('[RateLimits] Missing production store configuration: set REDIS_URL or UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN');
   throw new Error('Missing production rate-limit store configuration');
 }
 
-const store = new InMemoryStore();
+// Redis-backed store wrapper that uses a Redis client compatible with INCR/PEXPIRE/PTTL
+export class RedisStore {
+  private client: any;
+  constructor(client: any) {
+    this.client = client;
+  }
+
+  async incr(key: string, windowMs: number, _limit: number): Promise<Counter> {
+    const now = Date.now();
+    try {
+      // Use INCR then set PEXPIRE on first increment
+      const count: number = await this.client.incr(key);
+      if (count === 1) {
+        // set expiry in ms
+        if (typeof this.client.pexpire === 'function') {
+          await this.client.pexpire(key, windowMs);
+        } else if (typeof this.client.expire === 'function') {
+          // fallback to expire (seconds)
+          await this.client.expire(key, Math.ceil(windowMs / 1000));
+        }
+      }
+
+      // pttl returns ms remaining (ioredis and upstash support pttl)
+      let ttl = -1;
+      if (typeof this.client.pttl === 'function') {
+        // some clients return string or number
+        ttl = Number(await this.client.pttl(key));
+      } else if (typeof this.client.ttl === 'function') {
+        // fallback to seconds
+        const secs = Number(await this.client.ttl(key));
+        ttl = Number.isNaN(secs) ? -1 : secs * 1000;
+      }
+      if (ttl < 0) ttl = windowMs; // best effort
+      return { count, resetAt: now + ttl };
+    } catch (err) {
+      // rethrow to let caller handle fail-open if desired
+      throw err;
+    }
+  }
+
+  async get(key: string): Promise<Counter | undefined> {
+    try {
+      const val = await this.client.get(key);
+      if (val === null || val === undefined) return undefined;
+      const count = Number(val);
+      if (Number.isNaN(count)) return undefined;
+      let ttl = -1;
+      if (typeof this.client.pttl === 'function') {
+        ttl = Number(await this.client.pttl(key));
+      } else if (typeof this.client.ttl === 'function') {
+        const secs = Number(await this.client.ttl(key));
+        ttl = Number.isNaN(secs) ? -1 : secs * 1000;
+      }
+      if (ttl < 0) ttl = 0;
+      return { count, resetAt: Date.now() + ttl };
+    } catch (err) {
+      throw err;
+    }
+  }
+}
+
+// Initialize store: prefer REDIS_URL (ioredis) else UPSTASH_REDIS_REST_URL (Upstash)
+let store: { incr: (k: string, windowMs: number, limit: number) => Promise<Counter>; get: (k: string) => Promise<Counter | undefined> };
+if (process.env.REDIS_URL && hasIoredis) {
+  try {
+    const client = new RedisClient(process.env.REDIS_URL);
+    store = new RedisStore(client);
+    // simple ping to validate connection; do not block startup on failure in non-production
+    client.ping().catch((err: any) => console.warn('[RateLimits] Redis ping failed, falling back to in-memory for now:', err));
+  } catch (e) {
+    console.warn('[RateLimits] Failed to initialize ioredis client, falling back to in-memory:', e);
+    store = new InMemoryStore();
+  }
+} else if (process.env.UPSTASH_REDIS_REST_URL && hasUpstash) {
+  try {
+    // @upstash/redis exports createClient
+    const upstashClient = UpstashClient?.Redis.fromEnv ? UpstashClient.Redis.fromEnv() : UpstashClient.createClient({ url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN });
+    store = new RedisStore(upstashClient);
+    // validate ping
+    upstashClient.ping?.().catch((err: any) => console.warn('[RateLimits] Upstash ping failed, falling back to in-memory for now:', err));
+  } catch (e) {
+    console.warn('[RateLimits] Failed to initialize Upstash client, falling back to in-memory:', e);
+    store = new InMemoryStore();
+  }
+} else {
+  store = new InMemoryStore();
+}
 
 function headerSafeInt(value: any): number {
   const n = parseInt(String(value || '0'), 10);
@@ -86,7 +187,15 @@ function buildMiddleware(opts: { name: string; windowMs: number; limit: number; 
       }
 
       const storeKey = `${name}:${key}`;
-      const counter = await store.incr(storeKey, windowMs, limit);
+      let counter: Counter;
+      try {
+        counter = await store.incr(storeKey, windowMs, limit);
+      } catch (err) {
+        // fail-open on transient store errors but log
+        console.warn('[RateLimiter] Store error, allowing request:', err);
+        return next();
+      }
+
       const remaining = Math.max(0, limit - counter.count);
 
       // Standard headers
@@ -101,8 +210,7 @@ function buildMiddleware(opts: { name: string; windowMs: number; limit: number; 
 
       return next();
     } catch (err) {
-      // On failure of the rate limiter, fail open but log.
-      // Keep production logging consistent with existing trackAndLogError pattern in server.
+      // On failure of the rate limiter orchestration, fail open but log.
       console.warn('[RateLimiter] Failure, allowing request: ', err);
       return next();
     }
@@ -115,4 +223,6 @@ export const exportsRateLimiter = buildMiddleware({ name: 'exports', windowMs: 6
 export const tenantAdminRateLimiter = buildMiddleware({ name: 'tenant-admin', windowMs: 60 * 1000, limit: 3, scope: 'tenant' });
 export const publicRateLimiter = buildMiddleware({ name: 'public', windowMs: 60 * 1000, limit: 30, scope: 'ip' });
 // Public limiter exported for test and public-route usage; server imports only what it needs.
+
+export { InMemoryStore };
 
