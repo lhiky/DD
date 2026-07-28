@@ -42,7 +42,7 @@ import {
 } from './src/db/schema.ts';
 import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import { requireAuth, rateLimiter, requireRole, AuthenticatedRequest } from './src/middleware/security.ts';
-import { authRateLimiter, scansRateLimiter, exportsRateLimiter, tenantAdminRateLimiter, publicRateLimiter } from './src/middleware/rateLimits.ts';
+import { authRateLimiter, scansRateLimiter, exportsRateLimiter, tenantAdminRateLimiter } from './src/middleware/rateLimits.ts';
 import {
   validateBody,
   revokeSessionSchema, recordLoginSchema,

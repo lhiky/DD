@@ -114,11 +114,5 @@ export const scansRateLimiter = buildMiddleware({ name: 'scans', windowMs: 60 * 
 export const exportsRateLimiter = buildMiddleware({ name: 'exports', windowMs: 60 * 1000, limit: 5, scope: 'tenant' });
 export const tenantAdminRateLimiter = buildMiddleware({ name: 'tenant-admin', windowMs: 60 * 1000, limit: 3, scope: 'tenant' });
 export const publicRateLimiter = buildMiddleware({ name: 'public', windowMs: 60 * 1000, limit: 30, scope: 'ip' });
+// Public limiter exported for test and public-route usage; server imports only what it needs.
 
-export default {
-  authRateLimiter,
-  scansRateLimiter,
-  exportsRateLimiter,
-  tenantAdminRateLimiter,
-  publicRateLimiter,
-};
