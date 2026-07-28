@@ -63,35 +63,54 @@ export class RedisStore {
     this.client = client;
   }
 
-  async incr(key: string, windowMs: number, _limit: number): Promise<Counter> {
+  async incr(key: string, windowMs: number, limit: number): Promise<Counter> {
     const now = Date.now();
     try {
-      // Use INCR then set PEXPIRE on first increment
-      const count: number = await this.client.incr(key);
-      if (count === 1) {
-        // set expiry in ms
-        if (typeof this.client.pexpire === 'function') {
-          await this.client.pexpire(key, windowMs);
-        } else if (typeof this.client.expire === 'function') {
-          // fallback to expire (seconds)
-          await this.client.expire(key, Math.ceil(windowMs / 1000));
+      // Atomic Lua: if key doesn't exist, set to 1 and set PX expiry; if exists and < limit, INCR; else return current
+      const lua = `local cur = redis.call('GET', KEYS[1])\nif not cur then\n  redis.call('SET', KEYS[1], 1, 'PX', ARGV[1])\n  return {1, ARGV[1]}\nend\nlocal curNum = tonumber(cur)\nlocal lim = tonumber(ARGV[2])\nif curNum < lim then\n  local v = redis.call('INCR', KEYS[1])\n  local ttl = redis.call('PTTL', KEYS[1])\n  return {v, ttl}\nelse\n  local ttl = redis.call('PTTL', KEYS[1])\n  return {curNum, ttl}\nend`;
+
+      let res: any;
+      if (typeof this.client.eval === 'function') {
+        // ioredis and many Redis clients: eval(script, numKeys, key, args...)
+        res = await this.client.eval(lua, 1, key, windowMs, limit);
+      } else if (typeof this.client.execute === 'function') {
+        // Upstash REST client has execute for raw commands; try eval via execute
+        res = await this.client.execute('EVAL', lua, '1', key, String(windowMs), String(limit));
+      } else if (typeof this.client.evalsha === 'function') {
+        res = await this.client.eval(lua, 1, key, windowMs, limit);
+      } else {
+        // Fallback to non-atomic path
+        const count: number = Number(await this.client.incr(key));
+        if (count === 1) {
+          if (typeof this.client.pexpire === 'function') {
+            await this.client.pexpire(key, windowMs);
+          } else if (typeof this.client.expire === 'function') {
+            await this.client.expire(key, Math.ceil(windowMs / 1000));
+          }
         }
+        let ttl = -1;
+        if (typeof this.client.pttl === 'function') {
+          ttl = Number(await this.client.pttl(key));
+        } else if (typeof this.client.ttl === 'function') {
+          const secs = Number(await this.client.ttl(key));
+          ttl = Number.isNaN(secs) ? -1 : secs * 1000;
+        }
+        if (ttl < 0) ttl = windowMs;
+        return { count: Math.min(count, limit), resetAt: now + ttl };
       }
 
-      // pttl returns ms remaining (ioredis and upstash support pttl)
-      let ttl = -1;
-      if (typeof this.client.pttl === 'function') {
-        // some clients return string or number
-        ttl = Number(await this.client.pttl(key));
-      } else if (typeof this.client.ttl === 'function') {
-        // fallback to seconds
-        const secs = Number(await this.client.ttl(key));
-        ttl = Number.isNaN(secs) ? -1 : secs * 1000;
+      // normalize response: some clients return strings
+      if (Array.isArray(res) && res.length >= 2) {
+        const c = Number(res[0]);
+        let ttl = Number(res[1]);
+        if (ttl <= 0) ttl = windowMs;
+        return { count: Math.min(c, limit), resetAt: now + Number(ttl) };
+
       }
-      if (ttl < 0) ttl = windowMs; // best effort
-      return { count, resetAt: now + ttl };
+
+      // Unexpected response
+      throw new Error('Unexpected eval response: ' + String(res));
     } catch (err) {
-      // rethrow to let caller handle fail-open if desired
       throw err;
     }
   }
